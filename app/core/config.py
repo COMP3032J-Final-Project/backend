@@ -1,0 +1,67 @@
+# 用于配置FastAPI应用程序的设置
+import os
+from typing import List, Optional
+
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+from pydantic import AnyHttpUrl, field_validator
+import secrets
+
+
+load_dotenv()
+
+
+class Settings(BaseSettings):
+    # 基础配置
+    PROJECT_NAME: str = "MGGA Backend"
+    PROJECT_DESCRIPTION: str = "MGGA Backend"
+    VERSION: str = "0.0.1"
+    API_V1_STR: str = "/api"  # API路径
+    DEBUG: bool = True  # 调试模式
+
+    # FastAPI服务器配置
+    SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
+    SERVER_PORT: int = int(os.getenv("SERVER_PORT", 8000))
+    SERVER_WORKERS: int = int(os.getenv("SERVER_WORKERS", 1))  # TODO 根据服务器配置修改工作进程数
+
+    # 安全配置
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
+
+    # CORS配置
+    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+
+    # 如果BACKEND_CORS_ORIGINS是字符串，将其转换为列表，以便在FastAPI中使用
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    def assemble_cors_origins(cls, v: str | List[str]) -> List[str] | str:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, list | str):
+            return v
+        raise ValueError(v)
+
+    # 数据库配置
+    MARIA_DB: str = os.getenv("MARIA_DB", "MGGA_DB")
+    DB_USERNAME: str = os.getenv("DB_USERNAME", "root")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
+    DB_HOST: str = os.getenv("DB_HOST")
+    DB_PORT: str = os.getenv("DB_PORT")
+
+    @property
+    def sqlalchemy_database_uri(self) -> str:
+        return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.MARIA_DB}"
+
+    # Redis配置 (用于缓存)
+    # REDIS_HOST: str = "localhost"
+    # REDIS_PORT: int = 6379
+    # REDIS_PASSWORD: Optional[str] = None
+    # REDIS_DB: int = 0
+
+    class Config:
+        case_sensitive = True
+        env_file = ".env"
+
+
+# 创建设置实例
+settings = Settings()
