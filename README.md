@@ -44,8 +44,3 @@ python main.py
 # Debug Route
 启动服务后，可以在这里查看已有的视图函数
 http://localhost:8000/docs
-
-上传了后端模板
-1. 能够启动fastapi服务器
-2. 能够连接到数据库，并在启动时根据app/model/中的模型创建用户表
-3. 有用户注册、登录功能
