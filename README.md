@@ -6,11 +6,7 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 
 ## 手动部分
 
-1. 确保设备安装了MariaDB数据库，并且数据库服务已经启动。创建数据库 `MGGA_DB`。（忘了自动化脚本怎么写不好意思）
-
-```
-create database MGGA_DB;
-```
+1. 确保设备安装了MariaDB数据库，并且数据库服务已经启动。将MariaDB的mysql.exe加入系统环境变量。
 
 2. 根目录下创建.env文件，内容格式如下：
 
@@ -25,17 +21,20 @@ SERVER_PORT=8000
 SERVER_WORKERS=1
 ````
 
-3. 以及Python3.11环境。
+3. 应安装Python>=3.11。
+
 
 ## 自动部分
 
-1. 安装依赖
+1. 执行初始化脚本`setup.bat`。
+
+<!-- 1. 安装依赖
 
 ```shell
 pip install -r requirements.txt
-```
+``` -->
 
-3. 运行 'main.py'
+2. 运行 'main.py'
 
 ```shell
 python main.py
