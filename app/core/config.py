@@ -1,6 +1,6 @@
 # 用于配置FastAPI应用程序的设置
 import os
-from typing import List, Optional
+from typing import List
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
@@ -13,10 +13,10 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # 基础配置
-    PROJECT_NAME: str = "MGGA Backend"
+    PROJECT_NAME: str = "MGGA Backend"  # TODO Change Project Name
     PROJECT_DESCRIPTION: str = "MGGA Backend"
     VERSION: str = "0.0.1"
-    API_V1_STR: str = "/api"  # API路径
+    API_V1_STR: str = ""  # API路径
     DEBUG: bool = True  # 调试模式
 
     # FastAPI服务器配置

@@ -1,4 +1,5 @@
 # 用于用户认证
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import HTTPException, status
@@ -8,8 +9,7 @@ from jose import jwt
 
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash
-from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate
+from app.models.user import User, UserRegister, UserUpdateMe
 
 
 class AuthService:
@@ -85,14 +85,14 @@ class AuthService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create_user(
-            user_create: UserCreate,
+    async def register_user(
+            user_register: UserRegister,
             db: AsyncSession
     ) -> User:
-        """创建用户"""
+        """注册用户"""
         # 检查邮箱是否已存在
         existing_user = await AuthService.get_user_by_email(
-            user_create.email,
+            user_register.email,
             db
         )
         if existing_user:
@@ -103,11 +103,9 @@ class AuthService:
 
         # 创建新用户
         db_user = User(
-            email=user_create.email,
-            username=user_create.username,
-            hashed_password=get_password_hash(user_create.password),
-            is_active=user_create.is_active,
-            is_superuser=user_create.is_superuser
+            email=user_register.email,
+            username=user_register.username,
+            hashed_password=get_password_hash(user_register.password),
         )
         db.add(db_user)
         await db.commit()
@@ -115,24 +113,23 @@ class AuthService:
         return db_user
 
     @staticmethod
-    async def update_user(
-            user_id: int,
-            user_update: UserUpdate,
+    async def update_user_me(
+            user_id: uuid.UUID,
+            user_update_me: UserUpdateMe,
             db: AsyncSession
     ) -> Optional[User]:
-        """更新用户信息"""
+        """更新用户本人信息"""
         # 获取用户
         user = await db.get(User, user_id)
         if not user:
             return None
 
-        # 更新用户信息
-        update_data = user_update.model_dump(exclude_unset=True)
-        if "password" in update_data:
-            update_data["hashed_password"] = get_password_hash(
-                update_data.pop("password")
-            )
-
+        # TODO 添加密码更新
+        # if "password" in update_data:
+        #     update_data["hashed_password"] = get_password_hash(
+        #         update_data.pop("password")
+        #     )
+        update_data = user_update_me.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(user, field, value)
 

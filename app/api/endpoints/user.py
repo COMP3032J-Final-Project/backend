@@ -1,4 +1,5 @@
 # 用于实现 User 相关的 API 路由
+import uuid
 from datetime import timedelta
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
 from app.core.config import settings
-from app.schemas.token import Token
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.models.token import Token
+from app.models.user import UserResponse, UserRegister, UserUpdateMe
 from app.models.user import User
 from app.services.auth import AuthService
 
@@ -65,13 +66,13 @@ async def login(
 
 @router.post("/register", response_model=UserResponse)
 async def register(
-        user_in: UserCreate,
+        user_in: UserRegister,
         db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     """
     注册新用户
     """
-    return await AuthService.create_user(user_in, db)
+    return await AuthService.register_user(user_in, db)
 
 
 @router.post("/refresh", response_model=Token)
@@ -138,16 +139,16 @@ async def read_users_me(
 
 @router.put("/me", response_model=UserResponse)
 async def update_user_me(
-        user_update: UserUpdate,
+        user_update_me: UserUpdateMe,
         current_user: Annotated[User, Depends(get_current_user)],  # 依赖注入，获取当前用户
         db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     """
     更新当前用户信息
     """
-    user = await AuthService.update_user(
-        current_user.id,
-        user_update,
+    user = await AuthService.update_user_me(
+        uuid.UUID(str(current_user.id)),
+        user_update_me,
         db
     )
     if not user:

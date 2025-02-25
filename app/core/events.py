@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
+from app.core.db import engine
 from app.api.router import router
-from app.db.base import Base
-from app.db.session import engine
+from app.models.base import Base
 
 
 async def startup_handler() -> None:

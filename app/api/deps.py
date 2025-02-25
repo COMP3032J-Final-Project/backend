@@ -1,12 +1,13 @@
 # 用于定义依赖项，可以在路由处理函数中通过依赖注入的方式使用，例如获取数据库会话、获取当前用户等
+import uuid
 from typing import AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.db.session import async_session
-from app.schemas.token import TokenPayload
+from app.core.db import async_session
+from app.models.token import TokenPayload
 from app.models.user import User
 
 # FastAPI提供的OAuth2密码模式的认证类，用于获取token
@@ -50,7 +51,12 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = await db.get(User, token_data.sub)  # 获取指定主键的user, await用法是等待异步操作完成
+    try:
+        user_id = uuid.UUID(str(token_data.sub))  # 将字符串转换为UUID
+    except ValueError:
+        raise credentials_exception
+
+    user = await db.get(User, user_id)  # 获取指定user
     if user is None:
         raise credentials_exception
     return user

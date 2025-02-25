@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.api.deps import get_db
-from app.schemas.token import Token
+from app.models.token import Token
 from app.services.auth import AuthService
 from app.core.config import settings
 from typing import Annotated

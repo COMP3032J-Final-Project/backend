@@ -1,4 +1,4 @@
-# 用于实现 Token 相关的 Pydantic 模型
+# 用于实现 Token 相关模型
 # Pydantic 用于数据验证，本身并不与数据库交互
 from typing import Optional
 from datetime import datetime
@@ -137,6 +137,7 @@ class TokenMetadata(BaseModel):
     """
     Token元数据模型,用于存储额外的token信息
     """
+    # TODO 修改id
     user_id: int = Field(
         ...,
         description="用户ID",
