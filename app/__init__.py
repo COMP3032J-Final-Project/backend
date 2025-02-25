@@ -3,16 +3,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
-# pydantic 是 FastAPI 的依赖，是一个数据验证库, 用于数据验证, 也可以用于数据转换
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
-from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
 from app.core.config import settings

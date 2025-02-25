@@ -1,14 +1,16 @@
-pydantic-settings~=2.7.1
-pydantic~=2.10.5
-fastapi~=0.115.6
-python-dotenv~=1.0.1
-uvicorn~=0.21.1
-python-jose~=3.3.0
-bcrypt~=4.2.1
-aiomysql~=0.2.0
-dnspython~=2.7.0
-email-validator~=2.2.0
-python-multipart~=0.0.20
-starlette~=0.45.3
-SQLAlchemy~=2.0.38
+# uv: https://github.com/astral-sh/uv
+
+# Sync(install specified, uninstall unspecified) packages in environment:
+#   uv pip sync ./requirements_full.txt
+# add packages:
+#   uv pip sync ./requirements.txt
+#   # then install other packages into virtual environment manually through `pip install`
+#   uv pip install -r ./requirements.txt
+#   uv pip freeze > requirements_full.txt
+
+fastapi[standard]~=0.115.8
+pydantic_settings~=2.8.0
 sqlmodel~=0.0.22
+aiomysql~=0.2.0
+python-jose[cryptography]~=3.4.0
+passlib~=1.7.4

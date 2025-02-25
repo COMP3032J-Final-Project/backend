@@ -1,0 +1,13 @@
+[Unit]
+Description=Hivey web front-end service
+After=network.target
+
+[Service]
+Type=exec
+User=student
+WorkingDirectory=/var/www/hivey/backend/
+ExecStart=
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

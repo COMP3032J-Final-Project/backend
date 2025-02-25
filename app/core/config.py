@@ -13,8 +13,8 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # 基础配置
-    PROJECT_NAME: str = "MGGA Backend"  # TODO Change Project Name
-    PROJECT_DESCRIPTION: str = "MGGA Backend"
+    PROJECT_NAME: str = "Hivey Backend"
+    PROJECT_DESCRIPTION: str = "Hivey Backend"
     VERSION: str = "0.0.1"
     API_V1_STR: str = ""  # API路径
     DEBUG: bool = True  # 调试模式
