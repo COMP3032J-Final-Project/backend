@@ -42,15 +42,15 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # 数据库配置
-    MARIA_DB: str = os.getenv("MARIA_DB", "MGGA_DB")
-    DB_USERNAME: str = os.getenv("DB_USERNAME", "root")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
-    DB_HOST: str = os.getenv("DB_HOST")
-    DB_PORT: str = os.getenv("DB_PORT")
+    DB_NAME: str = os.getenv("DB_NAME", "hivey")
+    DB_USERNAME: str = os.getenv("DB_USERNAME", "mysql")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
+    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_PORT: str = os.getenv("DB_PORT", "3306")
 
     @property
     def sqlalchemy_database_uri(self) -> str:
-        return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.MARIA_DB}"
+        return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     # Redis配置 (用于缓存)
     # REDIS_HOST: str = "localhost"
