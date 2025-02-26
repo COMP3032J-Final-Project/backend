@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # FastAPI服务器配置
     SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT: int = int(os.getenv("SERVER_PORT", 8000))
-    SERVER_WORKERS: int = int(os.getenv("SERVER_WORKERS", 1))  # TODO 根据服务器配置修改工作进程数
+    SERVER_WORKERS: int = int(os.getenv("SERVER_WORKERS", 4))
 
     # 安全配置
     SECRET_KEY: str = secrets.token_urlsafe(32)

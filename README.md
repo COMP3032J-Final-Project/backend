@@ -2,44 +2,43 @@
 
 this is the repository hosting the backend for the COMP3032J Final Project.
 
-# Setup
+# 要求
 
-## 手动部分
+- python >= 3.11
+- MySQL/MariaDB
 
-1. 确保设备安装了MariaDB数据库，并且数据库服务已经启动。将MariaDB的mysql.exe加入系统环境变量。
+# 初始
 
-2. 根目录下创建.env文件，内容格式如下：
+1. 根目录下创建 `.env` 文件，示例文件在 [.env.example](./.env.example)
+2. 创建 python 虚拟环境并激活，示例:
+   ``` sh
+   python -m venv .venv
+   . .venv/bin/activate # for Linux/MacOS bash shell
+   # Windows PowerShell: venv\Scripts\Activate.ps1
+   ```
+3. 安装 Python 依赖
+   ``` sh
+   pip install -r ./requirements_full.txt
+   ```
 
-```
-MARIA_DB=MGGA_DB
-DB_USERNAME=root
-DB_PASSWORD=password  # 你的数据库密码
-DB_HOST=localhost
-DB_PORT=3306  # 确保数据库端口和你设置的MariaDB服务端口一致，并关闭可能的MySQL服务
-SERVER_HOST=localhost
-SERVER_PORT=8000
-SERVER_WORKERS=1
-````
+# 运行
 
-3. 应安装Python>=3.11。
+## 开发环境
 
-
-## 自动部分
-
-1. 执行初始化脚本`setup.bat`。
-
-<!-- 1. 安装依赖
-
-```shell
-pip install -r requirements.txt
-``` -->
-
-2. 运行 'main.py'
-
-```shell
-python main.py
+``` sh
+python ./main.py
 ```
 
-# Debug Route
-启动服务后，可以在这里查看已有的视图函数
+## 生产环境
+
+Please replace the content inside square brackets with the actual worker number
+you decide. Worker number reference: https://kisspeter.github.io/fastapi-performance-optimization/workers_and_threads.html
+
+``` sh
+fastapi run --workers [2 x $num_cores + 1] ./main.py 
+```
+
+
+# API 视图
+
 http://localhost:8000/docs
