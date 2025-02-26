@@ -29,8 +29,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
-        token: Annotated[str, Depends(oauth2_scheme)],
-        db: Annotated[AsyncSession, Depends(get_db)]) -> User:
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
     """
     获取当前用户
     """

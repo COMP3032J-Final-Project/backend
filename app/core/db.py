@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker
 )
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from app.core.config import settings
 
 # 创建异步数据库引擎

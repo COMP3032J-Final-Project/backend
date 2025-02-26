@@ -42,6 +42,7 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # 数据库配置
+    USE_SQLITE: bool = os.getenv("USE_SQLITE", "false").lower() == "true"
     DB_NAME: str = os.getenv("DB_NAME", "hivey")
     DB_USERNAME: str = os.getenv("DB_USERNAME", "mysql")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_uri(self) -> str:
+        if self.USE_SQLITE:
+            return f"sqlite+aiosqlite:///./hivey.db"
         return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     # Redis配置 (用于缓存)
