@@ -10,13 +10,14 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 # 初始
 
 1. 根目录下创建 `.env` 文件，示例文件在 [.env.example](./.env.example)
-2. 创建 python 虚拟环境并激活，示例:
+2. 创建和 `.env` 中的数据库名称对应的数据库。
+3. 创建 python 虚拟环境并激活，示例:
    ``` sh
    python -m venv .venv
    . .venv/bin/activate # for Linux/MacOS bash shell
    # Windows PowerShell: venv\Scripts\Activate.ps1
    ```
-3. 安装 Python 依赖
+4. 安装 Python 依赖
    ``` sh
    pip install -r ./requirements_full.txt
    ```
