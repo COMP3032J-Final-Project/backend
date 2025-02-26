@@ -6,8 +6,9 @@ After=network.target
 Type=exec
 User=student
 WorkingDirectory=/var/www/hivey/backend/
-ExecStart=
+ExecStart=/var/www/hivey/backend/misc/scripts/run-in-venv.sh
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

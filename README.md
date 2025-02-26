@@ -28,7 +28,7 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 ## 开发环境
 
 ``` sh
-python ./main.py
+fastapi dev ./main.py
 ```
 
 ## 生产环境
