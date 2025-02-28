@@ -21,7 +21,14 @@ class AuthService:
             password: str,
             db: AsyncSession
     ) -> Optional[User]:
-        """验证用户"""
+        """
+        验证并获取用户
+        :param identifier: 用户名或邮箱
+        :param password: 密码
+        :param db: 数据库会话
+
+        :return: 用户
+        """
         query = select(User).where((User.email == identifier) | (User.username == identifier))
         result = await db.execute(query)
         user = result.scalar_one_or_none()
@@ -34,7 +41,7 @@ class AuthService:
 
     @staticmethod
     def create_access_token(
-            subject: str | int,
+            subject: str | uuid.UUID,
             expires_delta: Optional[timedelta] = None
     ) -> str:
         """创建访问令牌"""
@@ -55,7 +62,7 @@ class AuthService:
 
     @staticmethod
     def create_refresh_token(
-            subject: str | int,
+            subject: str | uuid.UUID,
             expires_delta: Optional[timedelta] = None
     ) -> str:
         """创建刷新令牌"""
