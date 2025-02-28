@@ -44,7 +44,12 @@ class AuthService:
             subject: str | uuid.UUID,
             expires_delta: Optional[timedelta] = None
     ) -> str:
-        """创建访问令牌"""
+        """
+        创建访问令牌
+
+        :param subject:
+        :param expires_delta: 有效期
+        """
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
@@ -65,7 +70,13 @@ class AuthService:
             subject: str | uuid.UUID,
             expires_delta: Optional[timedelta] = None
     ) -> str:
-        """创建刷新令牌"""
+        """
+        创建刷新令牌
+
+        :param subject: 主题
+        :param expires_delta: 有效期
+        """
+
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
@@ -92,20 +103,42 @@ class AuthService:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def get_user_by_username(
+            username: str,
+            db: AsyncSession
+    ) -> Optional[User]:
+        """通过用户名获取用户"""
+        query = select(User).where(User.username == username)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+
+    @staticmethod
     async def register_user(
             user_register: UserRegister,
             db: AsyncSession
     ) -> User:
         """注册用户"""
         # 检查邮箱是否已存在
-        existing_user = await AuthService.get_user_by_email(
+        existing_user_by_email = await AuthService.get_user_by_email(
             user_register.email,
             db
         )
-        if existing_user:
+        if existing_user_by_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
+            )
+
+        # 检查用户名是否已存在
+        existing_user_by_username = await AuthService.get_user_by_username(
+            user_register.username,
+            db
+        )
+        if existing_user_by_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
             )
 
         # 创建新用户

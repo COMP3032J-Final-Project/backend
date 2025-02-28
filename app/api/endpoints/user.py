@@ -42,22 +42,14 @@ async def login(
             detail="Inactive user"
         )
 
-    # 创建访问令牌和刷新令牌
-    access_token_expires = timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
-    refresh_token_expires = timedelta(
-        minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
-    )
-
     return Token(
         access_token=AuthService.create_access_token(
             user.id,
-            expires_delta=access_token_expires
+            expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         ),
         refresh_token=AuthService.create_refresh_token(
             user.id,
-            expires_delta=refresh_token_expires
+            expires_delta=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
         ),
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
@@ -100,22 +92,14 @@ async def refresh_token(
                 detail="Invalid refresh token",
             )
 
-        # 创建新的令牌
-        access_token_expires = timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
-        refresh_token_expires = timedelta(
-            minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
-        )
-
         return Token(
             access_token=AuthService.create_access_token(
                 user.id,
-                expires_delta=access_token_expires
+                expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             ),
             refresh_token=AuthService.create_refresh_token(
                 user.id,
-                expires_delta=refresh_token_expires
+                expires_delta=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
             ),
             token_type="bearer",
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60

@@ -1,5 +1,6 @@
 # 用于实现 Token 相关模型
 # Pydantic 用于数据验证，本身并不与数据库交互
+import uuid
 from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
@@ -26,7 +27,7 @@ class Token(BaseModel):
     )
     expires_in: int = Field(
         ...,
-        description="访问令牌过期时间(秒)",
+        description="告知访问令牌的过期时间(秒)",
         example=3600
     )
 
@@ -46,7 +47,7 @@ class TokenPayload(BaseModel):
     """
     Token载荷模型(用于解析JWT)
     """
-    sub: str | int = Field(
+    sub: str | uuid.UUID = Field(
         ...,
         description="令牌主题(通常是用户ID)",
         example="123"
@@ -137,11 +138,10 @@ class TokenMetadata(BaseModel):
     """
     Token元数据模型,用于存储额外的token信息
     """
-    # TODO 修改id
-    user_id: int = Field(
+    user_id: str | uuid.UUID = Field(
         ...,
         description="用户ID",
-        example=123
+        example="515d3617-af31-4d78-97c4-58375a6220ab"
     )
     device_id: Optional[str] = Field(
         default=None,
