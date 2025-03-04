@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.core.config import settings
 from app.models.token import Token, TokenPayload
-from app.models.user import UserResponse, UserRegister, UserUpdateMe
+from app.models.user import UserBase, UserRegister, UserUpdateMe
 from app.models.user import User
 from app.services.auth import AuthService
 
@@ -56,7 +56,7 @@ async def login(
     )
 
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=UserBase)
 async def register(
         user_in: UserRegister,
         db: Annotated[AsyncSession, Depends(get_db)]
@@ -132,7 +132,7 @@ async def refresh(
         )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserBase)
 async def read_users_me(
         current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
@@ -142,7 +142,7 @@ async def read_users_me(
     return current_user
 
 
-@router.put("/me", response_model=UserResponse)
+@router.put("/me", response_model=UserBase)
 async def update_user_me(
         user_update_me: UserUpdateMe,
         current_user: Annotated[User, Depends(get_current_user)],

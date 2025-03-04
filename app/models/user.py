@@ -89,20 +89,6 @@ class UpdatePassword(Base):
     new_password: str = Field(min_length=8, max_length=40)
 
 
-class UserResponse(UserBase):
-    """
-    用户响应模型，用于返回用户数据（当创建、更新、查询用户时）
-    """
-    id: uuid.UUID
-    created_at: datetime
-
-    # 自定义 JSON 编码器，用于格式化 datetime 类型的数据
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-
 class User(UserBase, table=True):
     """
     用户模型，用于创建用户表
