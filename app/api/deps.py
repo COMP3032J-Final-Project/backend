@@ -29,26 +29,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)]
+        token: Annotated[str, Depends(oauth2_scheme)],
+        db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     """
     获取当前用户
     """
-    # 创建一个HTTP异常，用于在验证失败时返回
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # 解码token
     try:
-        # JSON Web Token，一种基于JSON的开放标准（RFC 7519），用于在网络上传输声明。
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
             algorithms=["HS256"]
         )
-        token_data = TokenPayload(**payload)  # **是解包操作符，将字典解包为关键字参数
+        token_data = TokenPayload(**payload)
     except JWTError:
         raise credentials_exception
 

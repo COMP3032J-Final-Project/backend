@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
 from app.core.config import settings
-from app.models.token import Token
+from app.models.token import Token, TokenPayload
 from app.models.user import UserResponse, UserRegister, UserUpdateMe
 from app.models.user import User
 from app.services.auth import AuthService
@@ -68,29 +68,50 @@ async def register(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(
+async def refresh(
         refresh_token: str,
         db: Annotated[AsyncSession, Depends(get_db)]
 ) -> Token:
     """
-    使用刷新令牌获取新的访问令牌
+    使用刷新令牌获取新的访问令牌(在访问令牌过期时使用)
     """
     try:
-        # 验证刷新令牌
+        # 解码刷新令牌
         payload = jwt.decode(
             refresh_token,
             settings.SECRET_KEY,
             algorithms=["HS256"]
         )
-        user_id = int(payload["sub"])
+        token_data = TokenPayload(**payload)
+
+        # 检查令牌
+        if token_data.typ != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+        if await AuthService.is_token_blacklisted(token_data.jti, db):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
 
         # 获取用户
+        user_id = uuid.UUID(str(token_data.sub))
         user = await db.get(User, user_id)
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
+
+        # 添加旧令牌到黑名单
+        await AuthService.add_token_to_blacklist(
+            token_data.jti,
+            token_data.exp,
+            token_data.typ,
+            db
+        )
 
         return Token(
             access_token=AuthService.create_access_token(
@@ -124,7 +145,7 @@ async def read_users_me(
 @router.put("/me", response_model=UserResponse)
 async def update_user_me(
         user_update_me: UserUpdateMe,
-        current_user: Annotated[User, Depends(get_current_user)],  # 依赖注入，获取当前用户
+        current_user: Annotated[User, Depends(get_current_user)],
         db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     """

@@ -1,12 +1,13 @@
 # 用于实现 Token 相关模型
 # Pydantic 用于数据验证，本身并不与数据库交互
 import uuid
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional
+from pydantic import Field, ConfigDict
+from app.models.base import Base
 
 
-class Token(BaseModel):
+class Token(Base):
     """
     Token响应模型
     """
@@ -43,7 +44,7 @@ class Token(BaseModel):
     )
 
 
-class TokenPayload(BaseModel):
+class TokenPayload(Base):
     """
     Token载荷模型(用于解析JWT)
     """
@@ -62,15 +63,15 @@ class TokenPayload(BaseModel):
         description="签发时间",
         example="2024-01-01T00:00:00"
     )
-    type: str = Field(
+    jti: Optional[str] = Field(
+        default=None,
+        description="JWT ID, 用于标识JWT的唯一ID",
+        example="unique-jwt-id-123"
+    )
+    typ: str = Field(
         default="access",
         description="令牌类型(access或refresh)",
         example="access"
-    )
-    jti: Optional[str] = Field(
-        default=None,
-        description="JWT ID",
-        example="unique-jwt-id-123"
     )
 
     model_config = ConfigDict(json_encoders={
@@ -78,7 +79,7 @@ class TokenPayload(BaseModel):
     })
 
 
-class RefreshToken(BaseModel):
+class RefreshToken(Base):
     """
     刷新令牌请求
     """
@@ -98,10 +99,12 @@ class RefreshToken(BaseModel):
     )
 
 
-class TokenBlacklist(BaseModel):
+class TokenBlacklist(Base, table=True):
     """
-    Token黑名单模型，防止已经撤销或注销的 token 被再次使用
+    Token黑名单模型，用于创建Token黑名单表，防止已经撤销或注销的 token 被再次使用
     """
+    __tablename__ = "token_blacklist"
+
     jti: str = Field(
         ...,
         description="JWT ID",
@@ -112,14 +115,10 @@ class TokenBlacklist(BaseModel):
         description="过期时间",
         example="2024-12-31T23:59:59"
     )
-    type: str = Field(
+    typ: str = Field(
         ...,
         description="令牌类型",
         example="access"
-    )
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="创建时间"
     )
 
     model_config = ConfigDict(
@@ -128,15 +127,14 @@ class TokenBlacklist(BaseModel):
                 "jti": "unique-jwt-id-123",
                 "exp": "2024-12-31T23:59:59",
                 "type": "access",
-                "created_at": "2024-01-01T00:00:00"
             }
         }
     )
 
 
-class TokenMetadata(BaseModel):
+class TokenMetadata(Base):
     """
-    Token元数据模型,用于存储额外的token信息
+    (暂未使用)Token元数据模型,用于存储额外的token信息
     """
     user_id: str | uuid.UUID = Field(
         ...,
@@ -157,10 +155,6 @@ class TokenMetadata(BaseModel):
         default=None,
         description="User Agent",
         example="Mozilla/5.0 ..."
-    )
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="创建时间"
     )
 
     model_config = ConfigDict(from_attributes=True)

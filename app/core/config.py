@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings
 from pydantic import AnyHttpUrl, field_validator
 import secrets
 
-
 load_dotenv()
 
 

@@ -9,6 +9,7 @@ from jose import jwt
 
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash
+from app.models.token import TokenBlacklist
 from app.models.user import User, UserRegister, UserUpdateMe
 
 
@@ -46,8 +47,7 @@ class AuthService:
     ) -> str:
         """
         创建访问令牌
-
-        :param subject:
+        :param subject: 用户ID
         :param expires_delta: 有效期
         """
         if expires_delta:
@@ -57,9 +57,15 @@ class AuthService:
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
 
-        to_encode = {"exp": expire, "sub": str(subject)}
+        payload = {
+            "sub": str(subject),
+            "exp": expire,
+            "iat": datetime.utcnow(),
+            "jti": str(uuid.uuid4()),
+            "typ": "access",
+        }
         encoded_jwt = jwt.encode(
-            to_encode,
+            payload,
             settings.SECRET_KEY,
             algorithm="HS256"
         )
@@ -72,11 +78,9 @@ class AuthService:
     ) -> str:
         """
         创建刷新令牌
-
-        :param subject: 主题
+        :param subject: 用户ID
         :param expires_delta: 有效期
         """
-
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
@@ -84,13 +88,49 @@ class AuthService:
                 minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES
             )
 
-        to_encode = {"exp": expire, "sub": str(subject)}
+        to_encode = {
+            "sub": str(subject),
+            "exp": expire,
+            "iat": datetime.utcnow(),
+            "jti": str(uuid.uuid4()),
+            "typ": "refresh",
+        }
         encoded_jwt = jwt.encode(
             to_encode,
             settings.SECRET_KEY,
             algorithm="HS256"
         )
         return encoded_jwt
+
+    @staticmethod
+    async def is_token_blacklisted(
+            jti: str,
+            db: AsyncSession
+    ):
+        """
+        检查令牌是否在黑名单
+        """
+        query = select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def add_token_to_blacklist(
+            jti: str,
+            exp: datetime,
+            typ: str,
+            db: AsyncSession
+    ):
+        """
+        添加令牌到黑名单
+        """
+        token_blacklist = TokenBlacklist(
+            jti=jti,
+            exp=exp,
+            typ=typ,
+        )
+        db.add(token_blacklist)
+        await db.commit()
 
     @staticmethod
     async def get_user_by_email(
@@ -111,7 +151,6 @@ class AuthService:
         query = select(User).where(User.username == username)
         result = await db.execute(query)
         return result.scalar_one_or_none()
-
 
     @staticmethod
     async def register_user(

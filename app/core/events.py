@@ -14,7 +14,6 @@ async def startup_handler() -> None:
     """
     应用启动时的处理函数
     """
-    # 数据库连接初始化等操作
     # 在应用启动时创建所有表格
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
