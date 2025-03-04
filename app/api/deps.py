@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.db import async_session
 from app.models.token import TokenPayload
 from app.models.user import User
+from app.repositories.user import UserDAO
 
 # FastAPI提供的OAuth2密码模式的认证类，用于获取token
 oauth2_scheme = OAuth2PasswordBearer(
@@ -57,7 +58,7 @@ async def get_current_user(
     except ValueError:
         raise credentials_exception
 
-    user = await db.get(User, user_id)  # 获取指定user
+    user = await UserDAO.get_user_by_id(user_id, db)
     if user is None:
         raise credentials_exception
     return user

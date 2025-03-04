@@ -1,6 +1,4 @@
 # 用于实现 User 相关模型
-import uuid
-from datetime import datetime
 from pydantic import EmailStr, ConfigDict
 from sqlmodel import Field
 
@@ -77,6 +75,7 @@ class UserUpdateMe(Base):
     """
     更新当前用户模型，用于用户更新自己的数据
     """
+    # TODO 添加其他用户信息字段
     username: str | None = Field(default=None, max_length=255)
     email: EmailStr | None = Field(default=None, max_length=255)
 

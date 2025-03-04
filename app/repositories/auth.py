@@ -1,20 +1,22 @@
-# 用于用户认证
+# 认证DAO
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from jose import jwt
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.core.security import verify_password, get_password_hash
+from app.core.security import verify_password
 from app.models.token import TokenBlacklist
-from app.models.user import User, UserRegister, UserUpdateMe
+from app.models.user import User
 
 
-class AuthService:
-    """认证服务"""
+class AuthDAO:
+    """
+    认证服务
+    """
 
     @staticmethod
     async def authenticate(
@@ -109,6 +111,8 @@ class AuthService:
     ):
         """
         检查令牌是否在黑名单
+        jti: JWT ID
+        db:
         """
         query = select(TokenBlacklist).where(TokenBlacklist.jti == jti)
         result = await db.execute(query)
@@ -123,6 +127,10 @@ class AuthService:
     ):
         """
         添加令牌到黑名单
+        jti: JWT ID
+        exp: 过期时间
+        typ: 令牌类型
+        db:
         """
         token_blacklist = TokenBlacklist(
             jti=jti,
@@ -131,87 +139,3 @@ class AuthService:
         )
         db.add(token_blacklist)
         await db.commit()
-
-    @staticmethod
-    async def get_user_by_email(
-            email: str,
-            db: AsyncSession
-    ) -> Optional[User]:
-        """通过邮箱获取用户"""
-        query = select(User).where(User.email == email)
-        result = await db.execute(query)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def get_user_by_username(
-            username: str,
-            db: AsyncSession
-    ) -> Optional[User]:
-        """通过用户名获取用户"""
-        query = select(User).where(User.username == username)
-        result = await db.execute(query)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def register_user(
-            user_register: UserRegister,
-            db: AsyncSession
-    ) -> User:
-        """注册用户"""
-        # 检查邮箱是否已存在
-        existing_user_by_email = await AuthService.get_user_by_email(
-            user_register.email,
-            db
-        )
-        if existing_user_by_email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-
-        # 检查用户名是否已存在
-        existing_user_by_username = await AuthService.get_user_by_username(
-            user_register.username,
-            db
-        )
-        if existing_user_by_username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
-            )
-
-        # 创建新用户
-        db_user = User(
-            email=user_register.email,
-            username=user_register.username,
-            hashed_password=get_password_hash(user_register.password),
-        )
-        db.add(db_user)
-        await db.commit()
-        await db.refresh(db_user)
-        return db_user
-
-    @staticmethod
-    async def update_user_me(
-            user_id: uuid.UUID,
-            user_update_me: UserUpdateMe,
-            db: AsyncSession
-    ) -> Optional[User]:
-        """更新用户本人信息"""
-        # 获取用户
-        user = await db.get(User, user_id)
-        if not user:
-            return None
-
-        # TODO 添加密码更新
-        # if "password" in update_data:
-        #     update_data["hashed_password"] = get_password_hash(
-        #         update_data.pop("password")
-        #     )
-        update_data = user_update_me.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(user, field, value)
-
-        await db.commit()
-        await db.refresh(user)
-        return user
