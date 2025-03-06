@@ -6,7 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.security import get_password_hash
-from app.models.user import UserUpdateMe, User, UserRegister
+from app.models.user import UserUpdate, User, UserRegister
 
 
 class UserDAO:
@@ -64,9 +64,9 @@ class UserDAO:
         return user
 
     @staticmethod
-    async def update_me(
+    async def update_user(
             user_id: uuid.UUID,
-            user_update_me: UserUpdateMe,
+            user_update: UserUpdate,
             db: AsyncSession
     ) -> Optional[User]:
         """更新用户本人信息"""
@@ -74,16 +74,10 @@ class UserDAO:
         if not user:
             return None
 
-        update_data = user_update_me.model_dump(exclude_unset=True)  # 过滤掉未设置的字段
+        update_data = user_update.model_dump(exclude_unset=True)  # 过滤掉未设置的字段
         for field, value in update_data.items():
             setattr(user, field, value)
 
         await db.commit()
         await db.refresh(user)
         return user
-
-        # TODO 添加密码更新
-        # if "password" in update_data:
-        #     update_data["hashed_password"] = get_password_hash(
-        #         update_data.pop("password")
-        #     )

@@ -44,13 +44,6 @@ class UserBase(Base):
     )
 
 
-class UserCreate(UserBase):
-    """
-    创建用户模型，用于管理员创建用户
-    """
-    password: str = Field(..., min_length=8, max_length=40)
-
-
 class UserRegister(Base):
     """
     创建用户模型，用于用户注册
@@ -61,17 +54,17 @@ class UserRegister(Base):
     password: str = Field(..., min_length=8, max_length=40)
 
 
-class UserUpdate(UserBase):
-    """
-    更新用户模型，用于管理员更新用户数据
-    """
-    username: str | None = Field(None, min_length=3, max_length=50)
-    email: EmailStr | None = Field(None, max_length=254)
-    is_active: bool | None = None
-    is_superuser: bool | None = None
+# class UserUpdate(UserBase):
+#     """
+#     更新用户模型，用于管理员更新用户数据
+#     """
+#     username: str | None = Field(None, min_length=3, max_length=50)
+#     email: EmailStr | None = Field(None, max_length=254)
+#     is_active: bool | None = None
+#     is_superuser: bool | None = None
 
 
-class UserUpdateMe(Base):
+class UserUpdate(Base):
     """
     更新当前用户模型，用于用户更新自己的数据
     """
@@ -80,12 +73,18 @@ class UserUpdateMe(Base):
     email: EmailStr | None = Field(default=None, max_length=255)
 
 
-class UpdatePassword(Base):
+class UserVerifyPwd(Base):
+    """
+    验证密码模型
+    """
+    password: str = Field(..., min_length=8, max_length=40)
+
+
+class UserUpdatePwd(Base):
     """
     更新密码模型
     """
-    current_password: str = Field(..., min_length=8, max_length=40)
-    new_password: str = Field(min_length=8, max_length=40)
+    new_password: str = Field(..., min_length=8, max_length=40)
 
 
 class User(UserBase, table=True):

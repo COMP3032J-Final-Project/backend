@@ -1,5 +1,7 @@
 # 认证相关的 API 路由
 import uuid
+from datetime import timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
@@ -8,12 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.api.deps import get_db
+from app.core.config import settings
 from app.models.token import Token, RefreshToken, TokenPayload
 from app.models.user import User
 from app.repositories.auth import AuthDAO
-from app.core.config import settings
-from typing import Annotated
-from datetime import timedelta
 
 router = APIRouter()
 
