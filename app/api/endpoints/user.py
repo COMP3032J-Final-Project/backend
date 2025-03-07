@@ -85,6 +85,29 @@ async def update_user(
     return Message(message="User updated")
 
 
+@router.delete("/me", response_model=Message)
+async def delete_user(
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[AsyncSession, Depends(get_db)]
+) -> Message:
+    """
+    删除当前用户
+    """
+    user = await UserDAO.get_user_by_id(
+        uuid.UUID(str(current_user.id)),
+        db
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    await db.delete(user)
+    await db.commit()
+    return Message(message="User deleted")
+
+
 @router.post("/pwd/verify", response_model=Message)
 async def verify_pwd(
         user_verify_pwd: UserVerifyPwd,

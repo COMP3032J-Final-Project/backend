@@ -3,13 +3,15 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from jose import jwt
+from fastapi import HTTPException
+from jose import jwt, JWTError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette import status
 
 from app.core.config import settings
 from app.core.security import verify_password
-from app.models.token import TokenBlacklist
+from app.models.token import TokenBlacklist, TokenPayload
 from app.models.user import User
 
 
@@ -139,3 +141,44 @@ class AuthDAO:
         )
         db.add(token_blacklist)
         await db.commit()
+
+    @staticmethod
+    async def get_token_payload(
+            token: str,
+            expected_type: str,
+            db: AsyncSession
+    ) -> TokenPayload:
+        """
+        解码并验证 token
+        :param token: 令牌
+        :param expected_type: "access" 或 "refresh"
+        :param db: 数据库会话
+        :return: TokenPayload 实例
+        """
+        try:
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=["HS256"]
+            )
+            token_data = TokenPayload(**payload)
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # 检查令牌类型
+        if token_data.typ != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid {expected_type} token",
+            )
+        # 检查令牌是否在黑名单中
+        if await AuthDAO.is_token_blacklisted(token_data.jti, db):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
+        return token_data

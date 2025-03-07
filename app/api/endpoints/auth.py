@@ -5,12 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from app.api.deps import get_db
+from app.api.deps import get_db, oauth2_scheme
 from app.core.config import settings
+from app.models.base import Message
 from app.models.token import Token, RefreshToken, TokenPayload
 from app.models.user import User
 from app.repositories.auth import AuthDAO
@@ -60,39 +60,17 @@ async def login(
 
 @router.post("/refresh", response_model=Token)
 async def refresh(
-        token_data: RefreshToken,
+        refresh_token: RefreshToken,
         db: Annotated[AsyncSession, Depends(get_db)]
 ) -> Token:
     """
     使用刷新令牌获取新的访问令牌(在访问令牌过期时使用)
     """
-    token_data = token_data.refresh_token
-    # 解码刷新令牌
-    try:
-        payload = jwt.decode(
-            token_data,
-            settings.SECRET_KEY,
-            algorithms=["HS256"]
-        )
-        token_data = TokenPayload(**payload)
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # 检查令牌
-    if token_data.typ != "refresh":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
-    if await AuthDAO.is_token_blacklisted(token_data.jti, db):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
+    token_data = await AuthDAO.get_token_payload(
+        refresh_token.refresh_token,
+        "refresh",
+        db
+    )
 
     # 获取用户
     user_id = uuid.UUID(str(token_data.sub))
@@ -123,3 +101,50 @@ async def refresh(
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
+
+
+@router.post("/logout", response_model=Message)
+async def logout(
+        access_token: Annotated[str, Depends(oauth2_scheme)],
+        refresh_token: RefreshToken,
+        db: Annotated[AsyncSession, Depends(get_db)]
+) -> Message:
+    """
+    登出(将访问令牌加入黑名单)
+    """
+    # 获取access_token
+    access_token_data = await AuthDAO.get_token_payload(
+        access_token,
+        "access",
+        db
+    )
+
+    # 获取refresh_token
+    refresh_token_data = await AuthDAO.get_token_payload(
+        refresh_token.refresh_token,
+        "refresh",
+        db
+    )
+
+    # 验证access_token和refresh_token是否匹配
+    if access_token_data.sub != refresh_token_data.sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token and refresh token do not match"
+        )
+
+    await AuthDAO.add_token_to_blacklist(
+        access_token_data.jti,
+        access_token_data.exp,
+        access_token_data.typ,
+        db
+    )
+
+    await AuthDAO.add_token_to_blacklist(
+        refresh_token_data.jti,
+        refresh_token_data.exp,
+        refresh_token_data.typ,
+        db
+    )
+
+    return Message(message="Logged out")
