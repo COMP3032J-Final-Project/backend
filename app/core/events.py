@@ -40,7 +40,7 @@ def configure_middleware(app: FastAPI) -> None:
     # CORS中间件
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
+        allow_origins=[str(origin).strip("/") for origin in settings.CORS_ORIGINS],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
