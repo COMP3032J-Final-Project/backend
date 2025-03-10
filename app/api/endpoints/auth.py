@@ -11,7 +11,7 @@ from starlette import status
 from app.api.deps import get_db, oauth2_scheme
 from app.core.config import settings
 from app.models.base import Message
-from app.models.token import Token, RefreshToken, TokenPayload
+from app.models.token import Token, RefreshToken
 from app.models.user import User
 from app.repositories.auth import AuthDAO
 

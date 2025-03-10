@@ -2,12 +2,46 @@
 from pydantic import EmailStr, ConfigDict
 from sqlmodel import Field
 
-from app.models.base import Base
+from app.models.base import Base, BaseDB
 
 
-class UserBase(Base):
+class User(BaseDB, table=True):
     """
-    用户基础模型，定义用户公共字段
+    用户模型，用于创建用户表
+    """
+    __tablename__ = "users"
+
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=50,
+        sa_column_kwargs={"unique": True, "index": True, "nullable": False},
+    )
+    email: EmailStr = Field(
+        ...,
+        max_length=254,
+        sa_column_kwargs={"unique": True, "index": True, "nullable": False},
+    )
+    hashed_password: str = Field(
+        ...,
+        max_length=100,
+        sa_column_kwargs={"nullable": False}
+    )
+    is_active: bool = Field(
+        default=True,
+    )
+    is_superuser: bool = Field(
+        default=False,
+    )
+
+    def __repr__(self) -> str:
+        return (f"<User username={self.username} email={self.email} "
+                f"is_active={self.is_active} is_superuser={self.is_superuser}>")
+
+
+class UserInfo(Base):
+    """
+    用户基本信息模型
     """
     username: str = Field(
         ...,  # 必填字段
@@ -32,7 +66,6 @@ class UserBase(Base):
     )
 
     model_config = ConfigDict(
-        from_attributes=True,
         json_schema_extra={
             "example": {
                 "username": "abc",
@@ -85,19 +118,3 @@ class UserUpdatePwd(Base):
     更新密码模型
     """
     new_password: str = Field(..., min_length=8, max_length=40)
-
-
-class User(UserBase, table=True):
-    """
-    用户模型，用于创建用户表
-    """
-    __tablename__ = "users"
-
-    hashed_password: str = Field(
-        ...,
-        max_length=100,
-        sa_column_kwargs={"nullable": False}
-    )
-
-    def __repr__(self) -> str:
-        return f"<User {self.username}>"

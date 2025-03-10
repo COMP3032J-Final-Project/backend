@@ -9,13 +9,13 @@ from app.api.deps import get_db, get_current_user
 from app.core.security import verify_password, get_password_hash
 from app.models.base import Message
 from app.models.user import User, UserVerifyPwd, UserUpdatePwd
-from app.models.user import UserBase, UserRegister, UserUpdate
+from app.models.user import UserInfo, UserRegister, UserUpdate
 from app.repositories.user import UserDAO
 
 router = APIRouter()
 
 
-@router.post("/register", response_model=UserBase)
+@router.post("/register", response_model=UserInfo)
 async def register(
         user_register: UserRegister,
         db: Annotated[AsyncSession, Depends(get_db)]
@@ -53,7 +53,7 @@ async def register(
     return new_user
 
 
-@router.get("/me", response_model=UserBase)
+@router.get("/me", response_model=UserInfo)
 async def read_me(
         current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:

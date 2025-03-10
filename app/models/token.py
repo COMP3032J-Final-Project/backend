@@ -1,10 +1,45 @@
 # 用于实现 Token 相关模型
-# Pydantic 用于数据验证，本身并不与数据库交互
 import uuid
 from datetime import datetime
 from typing import Optional
 from pydantic import Field, ConfigDict
-from app.models.base import Base
+from app.models.base import Base, BaseDB
+
+
+class TokenBlacklist(BaseDB, table=True):
+    """
+    Token黑名单模型，用于创建Token黑名单表，防止已经撤销或注销的 token 被再次使用
+    """
+    __tablename__ = "token_blacklist"
+
+    jti: str = Field(
+        ...,
+        description="JWT ID",
+        example="unique-jwt-id-123"
+    )
+    exp: datetime = Field(
+        ...,
+        description="过期时间",
+        example="2024-12-31T23:59:59"
+    )
+    typ: str = Field(
+        ...,
+        description="令牌类型",
+        example="access"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "jti": "unique-jwt-id-123",
+                "exp": "2024-12-31T23:59:59",
+                "type": "access",
+            }
+        }
+    )
+
+    def __repr__(self):
+        return f"<TokenBlacklist jti={self.jti} exp={self.exp} typ={self.typ}>"
 
 
 class Token(Base):
@@ -74,10 +109,6 @@ class TokenPayload(Base):
         example="access"
     )
 
-    model_config = ConfigDict(json_encoders={
-        datetime: lambda v: v.timestamp()
-    })
-
 
 class RefreshToken(Base):
     """
@@ -94,39 +125,6 @@ class RefreshToken(Base):
         json_schema_extra={
             "example": {
                 "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.yyy"
-            }
-        }
-    )
-
-
-class TokenBlacklist(Base, table=True):
-    """
-    Token黑名单模型，用于创建Token黑名单表，防止已经撤销或注销的 token 被再次使用
-    """
-    __tablename__ = "token_blacklist"
-
-    jti: str = Field(
-        ...,
-        description="JWT ID",
-        example="unique-jwt-id-123"
-    )
-    exp: datetime = Field(
-        ...,
-        description="过期时间",
-        example="2024-12-31T23:59:59"
-    )
-    typ: str = Field(
-        ...,
-        description="令牌类型",
-        example="access"
-    )
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "jti": "unique-jwt-id-123",
-                "exp": "2024-12-31T23:59:59",
-                "type": "access",
             }
         }
     )
@@ -156,5 +154,3 @@ class TokenMetadata(Base):
         description="User Agent",
         example="Mozilla/5.0 ..."
     )
-
-    model_config = ConfigDict(from_attributes=True)
