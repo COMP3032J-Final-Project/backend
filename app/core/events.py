@@ -21,10 +21,8 @@ async def startup_handler() -> None:
         await conn.run_sync(Base.metadata.create_all)
     pass
     
-    # 调试模式下添加 admin 用户
-    if settings.DEBUG:
-        async for db in get_db():
-            await create_default_admin(db)
+    async for db in get_db():
+        await create_default_admin(db)
 
 
 async def shutdown_handler() -> None:
@@ -42,7 +40,7 @@ def configure_middleware(app: FastAPI) -> None:
     # CORS中间件
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
