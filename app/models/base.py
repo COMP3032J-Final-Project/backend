@@ -26,7 +26,10 @@ class BaseDB(Base, table=False):
     """
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column_kwargs={"onupdate": datetime.now}  # 自动更新
+    )
 
 
 class Message(Base):

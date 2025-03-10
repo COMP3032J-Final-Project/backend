@@ -54,7 +54,7 @@ async def register(
 
 
 @router.get("/me", response_model=UserInfo)
-async def read_me(
+async def get_user(
         current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
     """
@@ -93,6 +93,7 @@ async def delete_user(
     """
     删除当前用户
     """
+    # TODO 是否改成假删除，即将is_active置为False
     user = await UserDAO.get_user_by_id(
         uuid.UUID(str(current_user.id)),
         db
