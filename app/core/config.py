@@ -1,14 +1,13 @@
 # 用于配置FastAPI应用程序的设置
 import os
+import secrets
 from typing import List
 
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
 from pydantic import AnyHttpUrl, field_validator
-import secrets
+from pydantic_settings import BaseSettings
 
 load_dotenv()
-
 
 class Settings(BaseSettings):
     # 基础配置
@@ -29,29 +28,20 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
 
     # CORS配置
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
-
-    # 如果BACKEND_CORS_ORIGINS是字符串，将其转换为列表，以便在FastAPI中使用
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v: str | List[str]) -> List[str] | str:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, list | str):
-            return v
-        raise ValueError(v)
+    CORS_ORIGINS: List[AnyHttpUrl] = []
 
     # 数据库配置
-    USE_SQLITE: bool = os.getenv("USE_SQLITE", "false").lower() == "true"
-    DB_NAME: str = os.getenv("DB_NAME", "hivey")
-    DB_USERNAME: str = os.getenv("DB_USERNAME", "mysql")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
-    DB_HOST: str = os.getenv("DB_HOST", "localhost")
-    DB_PORT: str = os.getenv("DB_PORT", "3306")
+    USE_SQLITE: bool = os.getenv("HIVEY_B_USE_SQLITE", "false").lower() == "true"
+    DB_NAME: str = os.getenv("HIVEY_B_DB_NAME", "hivey")
+    DB_USERNAME: str = os.getenv("HIVEY_B_DB_USERNAME", "mysql")
+    DB_PASSWORD: str = os.getenv("HIVEY_B_DB_PASSWORD", "password")
+    DB_HOST: str = os.getenv("HIVEY_B_DB_HOST", "localhost")
+    DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
 
-    # 默认管理员
-    DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
-    DEFAULT_ADMIN_USERNAME: str = "admin"
-    DEFAULT_ADMIN_PASSWORD: str = "password"
+    # 管理员
+    ADMIN_EMAIL: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
+    ADMIN_USERNAME: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
+    ADMIN_PASSWORD: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "password")
 
     @property
     def sqlalchemy_database_uri(self) -> str:
@@ -65,9 +55,11 @@ class Settings(BaseSettings):
     # REDIS_PASSWORD: Optional[str] = None
     # REDIS_DB: int = 0
 
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
+    model_config = {
+        "case_sensitive": True,
+        "env_file": ".env",
+        "env_prefix": "HIVEY_B_"
+    }
 
 
 # 创建设置实例
