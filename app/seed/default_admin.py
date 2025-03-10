@@ -11,11 +11,17 @@ async def create_default_admin(db: AsyncSession) -> None:
         db
     )
     if existing_user_by_email:
+        existing_user_by_email.is_superuser = True
+        await db.commit()
         return
 
     user_register = UserRegister(
         email=settings.DEFAULT_ADMIN_EMAIL,
         username=settings.DEFAULT_ADMIN_USERNAME,
-        password=settings.DEFAULT_ADMIN_PASSWORD
+        password=settings.DEFAULT_ADMIN_PASSWORD,
     )
-    await UserDAO.create_user(user_register, db)
+    await UserDAO.create_user(
+        db,
+        user_register,
+        is_superuser=True
+    )

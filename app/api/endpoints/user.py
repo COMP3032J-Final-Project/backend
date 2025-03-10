@@ -47,8 +47,8 @@ async def register(
 
     # 创建新用户
     new_user = await UserDAO.create_user(
+        db,
         user_register,
-        db
     )
     return new_user
 

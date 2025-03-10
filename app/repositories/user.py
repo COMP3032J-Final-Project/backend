@@ -47,16 +47,21 @@ class UserDAO:
 
     @staticmethod
     async def create_user(
+            db: AsyncSession,
             user_register: UserRegister,
-            db: AsyncSession
+            is_superuser: bool = False
     ) -> User:
         """
         创建用户
+        :param db: 数据库会话
+        :param user_register: 用户注册信息
+        :param is_superuser: 是否为管理员(默认为False)
         """
         user = User(
             email=user_register.email,
             username=user_register.username,
             hashed_password=get_password_hash(user_register.password),
+            is_superuser=is_superuser,
         )
         db.add(user)
         await db.commit()
