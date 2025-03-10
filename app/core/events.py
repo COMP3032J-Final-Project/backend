@@ -4,10 +4,12 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.deps import get_db
 from app.core.config import settings
 from app.core.db import engine
 from app.api.router import router
 from app.models.base import Base
+from app.seed.default_admin import create_default_admin
 
 
 async def startup_handler() -> None:
@@ -18,6 +20,11 @@ async def startup_handler() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     pass
+    
+    # 调试模式下添加 admin 用户
+    if settings.DEBUG:
+        async for db in get_db():
+            await create_default_admin(db)
 
 
 async def shutdown_handler() -> None:

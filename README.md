@@ -31,6 +31,13 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 fastapi dev ./app
 ```
 
+In development environment, a default admin user will be automatically created:
+```
+email: admin@example.com
+username: admin
+password: password
+```
+
 ## 生产环境
 
 Please replace the content inside square brackets with the actual worker number

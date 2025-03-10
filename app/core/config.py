@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
     DB_PORT: str = os.getenv("DB_PORT", "3306")
 
+    # 默认管理员
+    DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
+    DEFAULT_ADMIN_USERNAME: str = "admin"
+    DEFAULT_ADMIN_PASSWORD: str = "password"
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         if self.USE_SQLITE:
