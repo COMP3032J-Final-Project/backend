@@ -19,6 +19,6 @@ pip3 install -r ./requirements_full.txt
 echo "Starting Service..."
 CPU_CORES=$(nproc)
 WORKERS=$((2 * CPU_CORES + 1))
-fastapi run --workers $WORKERS ./main.py
+fastapi run --workers $WORKERS ./app
 
 

@@ -28,7 +28,7 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 ## 开发环境
 
 ``` sh
-fastapi dev ./main.py
+fastapi dev ./app
 ```
 
 ## 生产环境
@@ -37,7 +37,7 @@ Please replace the content inside square brackets with the actual worker number
 you decide. Worker number reference: https://kisspeter.github.io/fastapi-performance-optimization/workers_and_threads.html
 
 ``` sh
-fastapi run --workers [2 x $num_cores + 1] ./main.py 
+fastapi run --workers [2 x $num_cores + 1] ./app
 ```
 
 
