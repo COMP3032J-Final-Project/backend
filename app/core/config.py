@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Hivey Backend"
     PROJECT_DESCRIPTION: str = "Hivey Backend"
     VERSION: str = "0.0.1"
-    API_V1_STR: str = ""  # API路径
+    API_STR: str = ""  # API路径
     DEBUG: bool = True  # 调试模式
 
     # FastAPI服务器配置

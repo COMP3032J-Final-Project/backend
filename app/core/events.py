@@ -1,5 +1,5 @@
 # 用于管理应用的生命周期事件，包括启动事件和关闭事件，以及配置中间件、路由和全局异常处理等
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -58,7 +58,7 @@ def configure_routers(app: FastAPI) -> None:
     配置路由
     """
     # 注册API路由
-    app.include_router(router, prefix=settings.API_V1_STR)
+    app.include_router(router, prefix=settings.API_STR)
 
 
 def configure_exception_handlers(app: FastAPI) -> None:
@@ -72,7 +72,20 @@ def configure_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=500,
             content={
-                "message": "Internal Server Error",
-                "detail": str(exc) if settings.DEBUG else "An error occurred"  #
+                "code": 500,
+                "data": None,
+                "msg": str(exc) if settings.DEBUG else "Internal Server Error",
+            }
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        # HTTP异常处理
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": exc.status_code,
+                "data": None,
+                "msg": exc.detail,
             }
         )

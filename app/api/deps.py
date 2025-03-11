@@ -13,7 +13,7 @@ from app.repositories.user import UserDAO
 
 # FastAPI提供的OAuth2密码模式的认证类，用于获取token
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+    tokenUrl=f"{settings.API_STR}/auth/login"
 )
 
 

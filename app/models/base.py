@@ -1,9 +1,12 @@
 # 用于自定义 SQLModel 基础模型类
 import uuid
 from datetime import datetime
+from typing import Optional, Generic, TypeVar
 
 from pydantic import ConfigDict
 from sqlmodel import SQLModel, Field
+
+DataT = TypeVar("DataT")  # 泛型类型变量
 
 
 class Base(SQLModel, table=False):
@@ -32,8 +35,10 @@ class BaseDB(Base, table=False):
     )
 
 
-class Message(Base):
+class APIResponse(Base, Generic[DataT]):
     """
-    消息模型
+    API 响应模型
     """
-    message: str
+    code: int = 200
+    data: Optional[DataT] = None
+    msg: str = "success"

@@ -10,7 +10,7 @@ from starlette import status
 
 from app.api.deps import get_db, oauth2_scheme
 from app.core.config import settings
-from app.models.base import Message
+from app.models.base import APIResponse
 from app.models.token import Token, RefreshToken
 from app.models.user import User
 from app.repositories.auth import AuthDAO
@@ -19,11 +19,11 @@ router = APIRouter()
 
 
 # OAuth2密码流登录
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=APIResponse[Token])
 async def login(
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
         db: Annotated[AsyncSession, Depends(get_db)]
-) -> Token:
+) -> APIResponse[Token]:
     """
     OAuth2 compatible token login
     """
@@ -44,7 +44,7 @@ async def login(
             detail="Inactive user"
         )
 
-    return Token(
+    token = Token(
         access_token=AuthDAO.create_access_token(
             user.id,
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -57,15 +57,18 @@ async def login(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
+    return APIResponse[Token](code=200, data=token, msg="success")
 
-@router.post("/refresh", response_model=Token)
+
+@router.post("/refresh", response_model=APIResponse[Token])
 async def refresh(
         refresh_token: RefreshToken,
         db: Annotated[AsyncSession, Depends(get_db)]
-) -> Token:
+) -> APIResponse[Token]:
     """
     使用刷新令牌获取新的访问令牌(在访问令牌过期时使用)
     """
+    # TODO 若用户提供了尚未过期的访问令牌，也将其加入黑名单?
     token_data = await AuthDAO.get_token_payload(
         refresh_token.refresh_token,
         "refresh",
@@ -89,7 +92,7 @@ async def refresh(
         db
     )
 
-    return Token(
+    token = Token(
         access_token=AuthDAO.create_access_token(
             user.id,
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -102,13 +105,15 @@ async def refresh(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
+    return APIResponse[Token](code=200, data=token, msg="success")
 
-@router.post("/logout", response_model=Message)
+
+@router.post("/logout", response_model=APIResponse)
 async def logout(
         access_token: Annotated[str, Depends(oauth2_scheme)],
         refresh_token: RefreshToken,
         db: Annotated[AsyncSession, Depends(get_db)]
-) -> Message:
+) -> APIResponse:
     """
     登出(将访问令牌加入黑名单)
     """
@@ -147,4 +152,4 @@ async def logout(
         db
     )
 
-    return Message(message="Logged out")
+    return APIResponse(code=200, msg="User logged out")

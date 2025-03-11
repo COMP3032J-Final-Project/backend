@@ -70,15 +70,11 @@ class UserDAO:
 
     @staticmethod
     async def update_user(
-            user_id: uuid.UUID,
+            user: User,
             user_update: UserUpdate,
             db: AsyncSession
     ) -> Optional[User]:
         """更新用户本人信息"""
-        user = await UserDAO.get_user_by_id(user_id, db)
-        if not user:
-            return None
-
         update_data = user_update.model_dump(exclude_unset=True)  # 过滤掉未设置的字段
         for field, value in update_data.items():
             setattr(user, field, value)
