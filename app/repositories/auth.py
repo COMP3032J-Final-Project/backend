@@ -22,19 +22,19 @@ class AuthDAO:
 
     @staticmethod
     async def authenticate(
-            identifier: str,
+            email: str,
             password: str,
             db: AsyncSession
     ) -> Optional[User]:
         """
         验证并获取用户
-        :param identifier: 用户名或邮箱
+        :param email: 没错是邮箱
         :param password: 密码
         :param db: 数据库会话
 
         :return: 用户
         """
-        query = select(User).where((User.email == identifier) | (User.username == identifier))
+        query = select(User).where(User.email == email)
         result = await db.execute(query)
         user = result.scalar_one_or_none()
 
