@@ -307,6 +307,10 @@ class WebsocketConnManager(ABC):
         if not hasattr(self, 'initialized'):
             self.initialized = True
             self.active_connections: Dict[str, WebSocket] = {}
+            # Track which channels each client is subscribed to
+            self.client_channels: Dict[str, Set[str]] = {}
+            # Track active channel listeners
+            self.channel_tasks: Dict[str, asyncio.Task] = {}
             
             if url is None or url == "memory://":
                 self.psm = InMemoryPubSubManager()
@@ -338,38 +342,8 @@ class WebsocketConnManager(ABC):
             del self.active_connections[client_id]
             logger.info(f"Client {client_id} disconnected and removed from active connections.")
             
-    @abstractmethod
     async def _handle_disconnect(self, channel: str, client_id: str) -> None:
-        """Implementation-specific disconnect handling"""
-        pass
-    
-    @abstractmethod
-    async def handle_web_receive_message(self, channel: str, message: str, client_id: str) -> None:
-        """Handle a message received from a WebSocket"""
-        pass
-    
-    @abstractmethod
-    async def subscribe_to_channel(self, channel: str) -> asyncio.Task:
-        """Subscribe to a PubSub channel and start listening for messages"""
-        pass
-    
-    @abstractmethod
-    async def _process_pubsub_message(self, channel: str, data: Any) -> None:
-        """Process a message received from the PubSub system"""
-        pass
-
-
-class ChatRoomManager(WebsocketConnManager):
-    def __init__(self, url: Optional[str] = None):
-        super().__init__(url)
-        # Track which channels each client is subscribed to
-        if not hasattr(self, 'client_channels'):
-            self.client_channels: Dict[str, Set[str]] = {}
-            # Track active channel listeners
-            self.channel_tasks: Dict[str, asyncio.Task] = {}
-            
-    async def _handle_disconnect(self, channel: str, client_id: str) -> None:
-        """Notify other clients about disconnection"""
+        """Default implementation for disconnect handling"""
         await self.psm.publish(channel, json.dumps({
             "action": "disconnect",
             "client_id": client_id
@@ -382,22 +356,11 @@ class ChatRoomManager(WebsocketConnManager):
                 
             del self.client_channels[client_id]
             
-    async def handle_web_receive_message(self, channel: str, message: str, client_id: str) -> None:
-        """Handle a chat message from a client"""
-        data_to_publish = json.dumps({
-            "action": "send_message",
-            "message": message,
-            "client_id": client_id
-        })
-        await self.psm.publish(channel, data_to_publish)
-        logger.info(f"Published message to channel {channel} for client {client_id}.")
-        
-    async def subscribe_to_channel(self, channel: str) -> asyncio.Task:
+    async def _subscribe_to_channel(self, channel: str) -> asyncio.Task:
         """Subscribe to a channel and start a listener task"""
         if channel in self.channel_tasks and not self.channel_tasks[channel].done():
             return self.channel_tasks[channel]
         
-        logger.info(f"Subscribing to chat channel {channel}.")
         subscriber = await self.psm.subscribe(channel)
         
         task = asyncio.create_task(
@@ -415,7 +378,7 @@ class ChatRoomManager(WebsocketConnManager):
         self.client_channels[client_id].add(channel)
         
         # Make sure we're listening to this channel
-        await self.subscribe_to_channel(channel)
+        await self._subscribe_to_channel(channel)
         
         # Notify others about new client
         await self.psm.publish(channel, json.dumps({
@@ -440,7 +403,6 @@ class ChatRoomManager(WebsocketConnManager):
             
             # Check if any clients are still subscribed to this channel
             has_subscribers = any(
-                client_id in self.client_channels and 
                 channel in self.client_channels[client_id]
                 for client_id in self.client_channels
             )
@@ -475,16 +437,37 @@ class ChatRoomManager(WebsocketConnManager):
             logger.error(f"Error in channel listener for {channel}: {e}")
             raise
         
-    async def _process_pubsub_message(self, channel: str, data: Any) -> None:
+    async def send_message(self, channel: str, message: str, client_id: str) -> None:
+        """Handle a chat message from a client"""
+        data_to_publish = json.dumps({
+            "action": "send_message",
+            "message": message,
+            "client_id": client_id
+        })
+        await self.psm.publish(channel, data_to_publish)
+        logger.info(f"Published message to channel {channel} for client {client_id}.")
+    
+    @abstractmethod
+    async def _process_pubsub_message(self, channel: str, message: Any) -> None:
+        """Process a message received from the PubSub system"""
+        pass
+
+
+class ChatRoomManager(WebsocketConnManager):
+    def __init__(self, url: Optional[str] = None):
+        super().__init__(url)
+        
+        
+    async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         """Process a message from the PubSub system"""
         try:
             # We should already be filtering for message types in the listener
             # but double-check here just in case
-            if data["type"] != "message":
-                logger.debug(f"Skipping non-message type in process_pubsub: {data['type']}")
+            if message["type"] != "message":
+                logger.debug(f"Skipping non-message type in process_pubsub: {message['type']}")
                 return
             
-            message_data = data["data"]
+            message_data = message["data"]
             logger.debug(f"Processing message data: {message_data}")
             
             if isinstance(message_data, str):
@@ -548,211 +531,17 @@ class ChatRoomManager(WebsocketConnManager):
             raise
 
 
+
+
 class CRDTManager(WebsocketConnManager):
-    def __init__(self, url: Optional[str] = None):
-        super().__init__(url)
-        # Track which documents each client is editing
-        if not hasattr(self, 'client_documents'):
-            self.client_documents: Dict[str, Set[str]] = {}
-            # Track active document listeners
-            self.document_tasks: Dict[str, asyncio.Task] = {}
-            
-    async def _handle_disconnect(self, document_id: str, client_id: str) -> None:
-        """Notify other clients about disconnection"""
-        await self.psm.publish(f"doc:{document_id}", json.dumps({
-            "action": "disconnect",
-            "client_id": client_id
-        }))
-        
-        # Remove client from all documents
-        if client_id in self.client_documents:
-            for doc_id in list(self.client_documents[client_id]):
-                await self._unsubscribe_client_from_document(client_id, doc_id)
-                
-            del self.client_documents[client_id]
-            
-    async def handle_web_receive_message(self, document_id: str, message: str, client_id: str) -> None:
-        """Handle a CRDT operation from a client"""
-        try:
-            # Parse the CRDT operation
-            operation = json.loads(message)
-            
-            # Publish the operation to all clients editing this document
-            data_to_publish = json.dumps({
-                "action": "crdt_op",
-                "operation": operation,
-                "client_id": client_id
-            })
-            
-            await self.psm.publish(f"doc:{document_id}", data_to_publish)
-            logger.info(f"Published CRDT operation to document {document_id} from client {client_id}.")
-            
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON operation from client {client_id}: {message}")
-            
-    async def subscribe_to_channel(self, document_id: str) -> asyncio.Task:
-        """Subscribe to a document channel and start a listener task"""
-        channel = f"doc:{document_id}"
-        
-        if document_id in self.document_tasks and not self.document_tasks[document_id].done():
-            return self.document_tasks[document_id]
-        
-        logger.info(f"Subscribing to document channel {channel}.")
-        subscriber = await self.psm.subscribe(channel)
-        
-        task = asyncio.create_task(
-            self._listen_to_channel(document_id, subscriber)
-        )
-        
-        self.document_tasks[document_id] = task
-        return task
-    
-    async def subscribe_client_to_document(self, client_id: str, document_id: str) -> None:
-        """Subscribe a client to a document"""
-        if client_id not in self.client_documents:
-            self.client_documents[client_id] = set()
-            
-        self.client_documents[client_id].add(document_id)
-        
-        # Make sure we're listening to this document
-        await self.subscribe_to_channel(document_id)
-        
-        # Notify others about new client
-        await self.psm.publish(f"doc:{document_id}", json.dumps({
-            "action": "join_document",
-            "client_id": client_id
-        }))
-        
-        logger.info(f"Client {client_id} subscribed to document {document_id}")
-        
-    async def _unsubscribe_client_from_document(self, client_id: str, document_id: str) -> None:
-        """Unsubscribe a client from a document"""
-        if client_id in self.client_documents and document_id in self.client_documents[client_id]:
-            self.client_documents[client_id].remove(document_id)
-            
-            # Notify others
-            await self.psm.publish(f"doc:{document_id}", json.dumps({
-                "action": "leave_document",
-                "client_id": client_id
-            }))
-            
-            logger.info(f"Client {client_id} unsubscribed from document {document_id}")
-            
-            # Check if any clients are still subscribed to this document
-            has_subscribers = any(
-                client_id in self.client_documents and 
-                document_id in self.client_documents[client_id]
-                for client_id in self.client_documents
-            )
-            
-            if not has_subscribers and document_id in self.document_tasks:
-                logger.info(f"No more clients subscribed to document {document_id}, stopping listener")
-                self.document_tasks[document_id].cancel()
-                await self.psm.unsubscribe(f"doc:{document_id}")
-                del self.document_tasks[document_id]
-                
-    async def _listen_to_channel(self, document_id: str, subscriber: Any) -> None:
-        """Listen for messages on a PubSub channel"""
-        channel = f"doc:{document_id}"
-        try:
-            # Both in-memory and Redis implementation now use Queue
-            while True:
-                message = await subscriber.get()
-                logger.debug(f"Document {document_id} received message: {message}")
-                
-                # Skip errors and other non-message types
-                if message.get("type") == "error":
-                    logger.error(f"Error in PubSub for document {document_id}: {message.get('data')}")
-                    continue
-                elif message.get("type") != "message":
-                    logger.debug(f"Skipping non-message type in document listener: {message.get('type')}")
-                    continue
-                
-                # Process the message
-                await self._process_pubsub_message(document_id, message)
-                
-                # Mark task as done if queue supports it
-                if hasattr(subscriber, 'task_done'):
-                    subscriber.task_done()
-        except asyncio.CancelledError:
-            logger.info(f"Document listener for {document_id} was cancelled")
-        except Exception as e:
-            logger.error(f"Error in document listener for {document_id}: {e}")
-            raise
-        
-    async def _process_pubsub_message(self, document_id: str, data: Any) -> None:
+    """
+    All channel in the parameter means the project_id instead of the actual
+    channel name
+    """
+    async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         """Process a message from the PubSub system"""
-        try:
-            # Allow subscribe messages to pass through for initial connection
-            if data["type"] == "subscribe":
-                logger.info(f"Subscription confirmed for document {document_id}")
-                return
-                
-            if data["type"] != "message":
-                logger.debug(f"Skipping message with type {data['type']} for document {document_id}")
-                return  # Skip other non-message types
-            
-            message_data = data["data"]
-            if isinstance(message_data, str):
-                try:
-                    message = json.loads(message_data)
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON message for document {document_id}: {message_data}")
-                    return
-            else:
-                message = message_data
-                
-            action = message.get("action")
-            client_id = message.get("client_id")
-            
-            if action == "crdt_op":
-                # Forward to all other clients editing this document
-                operation = message.get("operation")
-                
-                for cid, documents in self.client_documents.items():
-                    if document_id in documents and cid in self.active_connections and cid != client_id:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
-                            "type": "crdt_op",
-                            "document_id": document_id,
-                            "from": client_id,
-                            "operation": operation
-                        }))
-                        
-                logger.info(f"Forwarded CRDT operation from {client_id} for document {document_id}")
-                
-            elif action == "join_document":
-                # Notify about new collaborator
-                for cid, documents in self.client_documents.items():
-                    if document_id in documents and cid in self.active_connections and cid != client_id:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
-                            "type": "collaborator_joined",
-                            "document_id": document_id,
-                            "client_id": client_id
-                        }))
-                        
-                logger.info(f"Notified clients about {client_id} joining document {document_id}")
-                
-            elif action == "leave_document" or action == "disconnect":
-                # Notify about collaborator leaving
-                for cid, documents in self.client_documents.items():
-                    if document_id in documents and cid in self.active_connections and cid != client_id:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
-                            "type": "collaborator_left",
-                            "document_id": document_id,
-                            "client_id": client_id
-                        }))
-                        
-                logger.info(f"Notified clients about {client_id} leaving document {document_id}")
-                
-        except Exception as e:
-            logger.error(f"Error processing pubsub message for document {document_id}: {e}")
-            raise
-
-
-
+        logger.info(message)
+        
 
 
 class MockWebSocket:
@@ -778,7 +567,7 @@ async def test_chat_room():
     """Test the ChatRoomManager functionality"""
     logger.info("Testing ChatRoomManager")
         
-    manager = ChatRoomManager("redis://localhost:7890")
+    manager = ChatRoomManager("redis://localhost:6379")
     await manager.initialize()
         
     # Give connection time to fully establish
@@ -808,13 +597,13 @@ async def test_chat_room():
     await asyncio.sleep(0.2)
         
     # Send messages
-    await manager.handle_web_receive_message("general", "Hello from user1!", "user1")
+    await manager.send_message("general", "Hello from user1!", "user1")
     await asyncio.sleep(0.5)  # Give more time for message processing
         
-    await manager.handle_web_receive_message("general", "Hi user1, this is user2!", "user2")
+    await manager.send_message("general", "Hi user1, this is user2!", "user2")
     await asyncio.sleep(0.5)
         
-    await manager.handle_web_receive_message("random", "Anyone in random channel?", "user3")
+    await manager.send_message("random", "Anyone in random channel?", "user3")
         
     # Wait longer for messages to be processed
     await asyncio.sleep(1.0)
@@ -854,10 +643,10 @@ async def test_crdt_manager():
     await manager.connect("user2", client2)
         
     # Subscribe clients to documents
-    await manager.subscribe_client_to_document("user1", "doc1")
+    await manager.subscribe_client_to_channel("user1", "doc1")
     await asyncio.sleep(0.3)  # Give more time for subscription to complete
         
-    await manager.subscribe_client_to_document("user2", "doc1")
+    await manager.subscribe_client_to_channel("user2", "doc1")
     await asyncio.sleep(0.3)
         
     # Send CRDT operations
@@ -873,10 +662,10 @@ async def test_crdt_manager():
         "count": 7
     })
         
-    await manager.handle_web_receive_message("doc1", insert_op, "user1")
+    await manager.send_message("doc1", insert_op, "user1")
     await asyncio.sleep(0.5)  # Give more time for message propagation
         
-    await manager.handle_web_receive_message("doc1", delete_op, "user2")
+    await manager.send_message("doc1", delete_op, "user2")
         
     # Wait longer for messages to be processed
     await asyncio.sleep(1.0)

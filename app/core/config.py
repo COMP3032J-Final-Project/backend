@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = os.getenv("HIVEY_B_DB_PASSWORD", "password")
     DB_HOST: str = os.getenv("HIVEY_B_DB_HOST", "localhost")
     DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
+    
+    PUB_SUB_BACKEND_URL: str = os.getenv("HIVEY_B_PUB_SUB_BACKEND_URL", "memory://").strip()
 
     # 管理员
     ADMIN_EMAIL: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
@@ -49,11 +51,6 @@ class Settings(BaseSettings):
             return f"sqlite+aiosqlite:///./hivey.db"
         return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
-    # Redis配置 (用于缓存)
-    # REDIS_HOST: str = "localhost"
-    # REDIS_PORT: int = 6379
-    # REDIS_PASSWORD: Optional[str] = None
-    # REDIS_DB: int = 0
 
     model_config = {
         "case_sensitive": True,
