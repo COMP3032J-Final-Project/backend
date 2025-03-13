@@ -9,7 +9,7 @@ import redis.asyncio as aioredis
 
 logger.disable(__name__)
 
-class ConnectionNotInitiailized(Exception):
+class ConnectionNotInitialized(Exception):
     def __str__(self):
         return "Connection not initialized. Please initialize connection first!"
 
@@ -112,7 +112,7 @@ class RedisPubSubManager(PubSubInterface):
         
     async def publish(self, topic: str, message: str) -> None:
         if not self.conn:
-            raise ConnectionNotInitiailized()
+            raise ConnectionNotInitialized()
         
         await self.conn.publish(topic, message)
         
@@ -134,7 +134,7 @@ class RedisPubSubManager(PubSubInterface):
             asyncio.Queue: Queue that will receive messages from this topic
         """
         if not self.conn:
-            raise ConnectionNotInitiailized()
+            raise ConnectionNotInitialized()
         
         if topic in self.message_queues:
             return self.message_queues[topic]
@@ -561,6 +561,10 @@ class MockWebSocket:
     async def send_text(self, message: str) -> None:
         self.messages.append(message)
         logger.info(f"Sent message to mock client {self.client_id}: {message}")
+
+    async def send_json(self, data: any) -> None:
+        message = json.dumps(data)
+        await self.send_text(message)
         
     async def receive_text(self) -> str:
         return json.dumps({"test": "data"})  # Default test response
