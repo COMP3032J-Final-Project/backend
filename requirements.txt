@@ -8,12 +8,14 @@
 #   uv pip install -r ./requirements.txt
 #   uv pip freeze > requirements_full.txt
 
-fastapi[standard]~=0.115.8
-pydantic_settings~=2.8.0
-sqlmodel~=0.0.22
 aiomysql~=0.2.0
 aiosqlite~=0.21.0
-python-jose[cryptography]~=3.4.0
-passlib~=1.7.4
 bcrypt~=4.3.0
-
+fastapi[standard]~=0.115.8
+loguru~=0.7.3
+passlib~=1.7.4
+pydantic_settings~=2.8.0
+python-jose[cryptography]~=3.4.0
+redis[hiredis]~=5.2.1
+sqlmodel~=0.0.22
+uvicorn==0.21.1
