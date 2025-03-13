@@ -312,7 +312,7 @@ class WebsocketConnManager(ABC):
             # Track active channel listeners
             self.channel_tasks: Dict[str, asyncio.Task] = {}
             
-            if url is None or url == "memory://":
+            if url is None or url.startswith("memory://"):
                 self.psm = InMemoryPubSubManager()
                 logger.info("Using in-memory PubSub manager")
             elif url.startswith("redis://"):
@@ -321,38 +321,39 @@ class WebsocketConnManager(ABC):
             else:
                 raise ValueError(f"Unsupported URL scheme: {url}")
             
-    async def initialize(self) -> None:
+    async def initialize(self):
         """Initialize the connection to the PubSub backend"""
         await self.psm.connect()
         
-    async def cleanup(self) -> None:
+    async def cleanup(self):
         """Clean up resources before shutdown"""
         await self.psm.disconnect()
         
-    async def connect(self, client_id: str, websocket: WebSocket) -> None:
+    async def connect(self, client_id: str, websocket: WebSocket):
         """Accept a new WebSocket connection and store it"""
         await websocket.accept()
         self.active_connections[client_id] = websocket
         logger.info(f"Client {client_id} connected.")
         
-    async def disconnect(self, channel: str, client_id: str) -> None:
+    async def disconnect(self, client_id: str, notification_channel: str | None = None):
         """Handle client disconnection"""
         if client_id in self.active_connections:
-            await self._handle_disconnect(channel, client_id)
+            await self._handle_disconnect(client_id, notification_channel)
             del self.active_connections[client_id]
             logger.info(f"Client {client_id} disconnected and removed from active connections.")
             
-    async def _handle_disconnect(self, channel: str, client_id: str) -> None:
+    async def _handle_disconnect(self, client_id: str, notification_channel: str | None):
         """Default implementation for disconnect handling"""
-        await self.psm.publish(channel, json.dumps({
-            "action": "disconnect",
-            "client_id": client_id
-        }))
-        
+        if notification_channel:
+            await self.psm.publish(notification_channel, json.dumps({
+                "action": "disconnect",
+                "client_id": client_id
+            }))
+            
         # Remove client from all channels
         if client_id in self.client_channels:
             for channel in list(self.client_channels[client_id]):
-                await self._unsubscribe_client_from_channel(client_id, channel)
+                await self.unsubscribe_client_from_channel(client_id, channel)
                 
             del self.client_channels[client_id]
             
@@ -370,7 +371,7 @@ class WebsocketConnManager(ABC):
         self.channel_tasks[channel] = task
         return task
     
-    async def subscribe_client_to_channel(self, client_id: str, channel: str) -> None:
+    async def subscribe_client_to_channel(self, client_id: str, channel: str):
         """Subscribe a client to a channel"""
         if client_id not in self.client_channels:
             self.client_channels[client_id] = set()
@@ -388,7 +389,7 @@ class WebsocketConnManager(ABC):
         
         logger.info(f"Client {client_id} subscribed to channel {channel}")
         
-    async def _unsubscribe_client_from_channel(self, client_id: str, channel: str) -> None:
+    async def unsubscribe_client_from_channel(self, client_id: str, channel: str) -> None:
         """Unsubscribe a client from a channel"""
         if client_id in self.client_channels and channel in self.client_channels[client_id]:
             self.client_channels[client_id].remove(channel)
@@ -413,7 +414,7 @@ class WebsocketConnManager(ABC):
                 await self.psm.unsubscribe(channel)
                 del self.channel_tasks[channel]
                 
-    async def _listen_to_channel(self, channel: str, subscriber: Any) -> None:
+    async def _listen_to_channel(self, channel: str, subscriber: Any):
         """Listen for messages on a PubSub channel"""
         try:
             while True:
@@ -437,7 +438,7 @@ class WebsocketConnManager(ABC):
             logger.error(f"Error in channel listener for {channel}: {e}")
             raise
         
-    async def send_message(self, channel: str, message: str, client_id: str) -> None:
+    async def send_message(self, channel: str, message: str, client_id: str):
         """Handle a chat message from a client"""
         data_to_publish = json.dumps({
             "action": "send_message",
@@ -448,7 +449,7 @@ class WebsocketConnManager(ABC):
         logger.info(f"Published message to channel {channel} for client {client_id}.")
     
     @abstractmethod
-    async def _process_pubsub_message(self, channel: str, message: Any) -> None:
+    async def _process_pubsub_message(self, channel: str, message: Any):
         """Process a message received from the PubSub system"""
         pass
 
@@ -579,13 +580,13 @@ async def test_chat_room():
     client3 = MockWebSocket("user3")
         
     # Connect clients
-    await manager.connect("user1", client1)
-    await manager.connect("user2", client2)
-    await manager.connect("user3", client3)
+    await manager.connect("user1", client1) # pyright: ignore[reportArgumentType]
+    await manager.connect("user2", client2) # pyright: ignore[reportArgumentType]
+    await manager.connect("user3", client3) # pyright: ignore[reportArgumentType]
         
     # Subscribe clients to channels
     await manager.subscribe_client_to_channel("user1", "general")
-    await asyncio.sleep(0.2)  # Give more time for subscription to complete
+    await asyncio.sleep(0.2)
         
     await manager.subscribe_client_to_channel("user2", "general") 
     await asyncio.sleep(0.2)
@@ -598,15 +599,13 @@ async def test_chat_room():
         
     # Send messages
     await manager.send_message("general", "Hello from user1!", "user1")
-    await asyncio.sleep(0.5)  # Give more time for message processing
+    await asyncio.sleep(0.5)
         
     await manager.send_message("general", "Hi user1, this is user2!", "user2")
     await asyncio.sleep(0.5)
         
     await manager.send_message("random", "Anyone in random channel?", "user3")
-        
-    # Wait longer for messages to be processed
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(0.5)
     
     # Print client message counts
     logger.info(f"Client user1 received {len(client1.messages)} messages")
@@ -614,8 +613,8 @@ async def test_chat_room():
     logger.info(f"Client user3 received {len(client3.messages)} messages")
     
     # Unsubscribe and disconnect
-    await manager._unsubscribe_client_from_channel("user1", "general")
-    await manager.disconnect("general", "user3")
+    await manager.unsubscribe_client_from_channel("user1", "general")
+    await manager.disconnect("user3", notification_channel="general")
     
     # Give time for cleanup
     await asyncio.sleep(0.3)
@@ -639,12 +638,12 @@ async def test_crdt_manager():
     client2 = MockWebSocket("user2")
         
     # Connect clients
-    await manager.connect("user1", client1)
-    await manager.connect("user2", client2)
+    await manager.connect("user1", client1) # pyright: ignore[reportArgumentType]
+    await manager.connect("user2", client2) # pyright: ignore[reportArgumentType]
         
     # Subscribe clients to documents
     await manager.subscribe_client_to_channel("user1", "doc1")
-    await asyncio.sleep(0.3)  # Give more time for subscription to complete
+    await asyncio.sleep(0.3)
         
     await manager.subscribe_client_to_channel("user2", "doc1")
     await asyncio.sleep(0.3)
@@ -666,9 +665,7 @@ async def test_crdt_manager():
     await asyncio.sleep(0.5)  # Give more time for message propagation
         
     await manager.send_message("doc1", delete_op, "user2")
-        
-    # Wait longer for messages to be processed
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(0.5)
     
     # Print client message counts
     logger.info(f"Client user1 received {len(client1.messages)} messages")
@@ -680,12 +677,10 @@ async def test_crdt_manager():
         logger.info(f"  Message {i+1}: {msg}")
         
     # Disconnect clients
-    await manager.disconnect("doc1", "user1")
+    await manager.disconnect("user1", notification_channel="doc1")
     await asyncio.sleep(0.2)
     
-    await manager.disconnect("doc1", "user2")
-    
-    # Give time for cleanup
+    await manager.disconnect("user2", notification_channel="doc1")
     await asyncio.sleep(0.3)
     
     await manager.cleanup()

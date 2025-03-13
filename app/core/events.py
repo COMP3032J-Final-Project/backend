@@ -11,6 +11,7 @@ from app.seed.default_admin import create_default_admin
 
 from .config import settings
 from .db import engine
+from .websocket import crdt_manager, chatroom_manager
 
 async def startup_handler() -> None:
     """
@@ -23,12 +24,17 @@ async def startup_handler() -> None:
     async for db in get_db():
         await create_default_admin(db)
 
+    await crdt_manager.initialize()
+    await chatroom_manager.initialize()
+
 
 async def shutdown_handler() -> None:
     """
     应用关闭时的处理函数
     """
-    pass
+    await crdt_manager.cleanup()
+    await crdt_manager.cleanup()
+    
 
 
 def configure_middleware(app: FastAPI) -> None:
