@@ -1,3 +1,4 @@
+from ast import ExceptHandler
 import asyncio
 from typing import Dict, Any, Optional, List, Set, Union
 import json
@@ -330,8 +331,10 @@ class WebsocketConnManager(ABC):
         await self.psm.disconnect()
         
     async def connect(self, client_id: str, websocket: WebSocket):
-        """Accept a new WebSocket connection and store it"""
-        await websocket.accept()
+        """
+        Accept a new WebSocket connection and store it
+        Note before this function you must do `await websocket.accept()`
+        """
         self.active_connections[client_id] = websocket
         logger.info(f"Client {client_id} connected.")
         
@@ -373,6 +376,9 @@ class WebsocketConnManager(ABC):
     
     async def subscribe_client_to_channel(self, client_id: str, channel: str):
         """Subscribe a client to a channel"""
+        if client_id not in self.active_connections:
+            raise Exception(f"Client {client_id} is not in active connections list.")
+        
         if client_id not in self.client_channels:
             self.client_channels[client_id] = set()
             
@@ -415,7 +421,10 @@ class WebsocketConnManager(ABC):
                 del self.channel_tasks[channel]
                 
     async def _listen_to_channel(self, channel: str, subscriber: Any):
-        """Listen for messages on a PubSub channel"""
+        """
+        Listen for messages on a PubSub channel
+        subscriber: pubsub subscriber (e.g. Redis pubsub)
+        """
         try:
             while True:
                 message = await subscriber.get()
@@ -440,27 +449,26 @@ class WebsocketConnManager(ABC):
         
     async def send_message(self, channel: str, message: str, client_id: str):
         """Handle a chat message from a client"""
+        if channel not in self.client_channels[client_id]:
+            raise Exception(f"Client {client_id} is not in channel {channel}!")
+        
         data_to_publish = json.dumps({
             "action": "send_message",
             "message": message,
             "client_id": client_id
         })
+        
         await self.psm.publish(channel, data_to_publish)
-        logger.info(f"Published message to channel {channel} for client {client_id}.")
+        logger.info(f"Published message to channel {channel} from client {client_id}.")
     
     @abstractmethod
     async def _process_pubsub_message(self, channel: str, message: Any):
-        """Process a message received from the PubSub system"""
+        """Process a MESSAGE received from the CHANNEL"""
         pass
 
 
 class ChatRoomManager(WebsocketConnManager):
-    def __init__(self, url: Optional[str] = None):
-        super().__init__(url)
-        
-        
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
-        """Process a message from the PubSub system"""
         try:
             # We should already be filtering for message types in the listener
             # but double-check here just in case
@@ -535,14 +543,11 @@ class ChatRoomManager(WebsocketConnManager):
 
 
 class CRDTManager(WebsocketConnManager):
-    """
-    All channel in the parameter means the project_id instead of the actual
-    channel name
-    """
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
-        """Process a message from the PubSub system"""
-        logger.info(message)
-        
+        for cid, channels in self.client_channels.items():
+            if channel in channels: # client `cid` subscribes this channel
+                websocket = self.active_connections[cid]
+                await websocket.send_json(message)
 
 
 class MockWebSocket:

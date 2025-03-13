@@ -13,12 +13,13 @@ async def crdt(
     await websocket.accept()
     fake_user_id = str(hash(websocket))
     await crdt_manager.connect(fake_user_id, websocket)
-    await crdt_manager.subscribe_client_to_channel("user1", "doc1")
+    await crdt_manager.subscribe_client_to_channel(fake_user_id, "doc1")
 
     try:
         while True:
             data = await websocket.receive_text()
-            await websocket.send_text(f"Message text was: {data}")
+            # await websocket.send_text(f"{fake_user_id}: {data}")
+            await crdt_manager.send_message("doc1", data, fake_user_id)
     except WebSocketDisconnect:
         await crdt_manager.disconnect(fake_user_id)
         pass

@@ -33,7 +33,7 @@ async def shutdown_handler() -> None:
     应用关闭时的处理函数
     """
     await crdt_manager.cleanup()
-    await crdt_manager.cleanup()
+    await chatroom_manager.cleanup()
     
 
 
