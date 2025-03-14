@@ -1,3 +1,12 @@
+"""
+To create a new Connection Manager like `CRDTManager`  
+You should create a new class implement `WebsocketConnManager`, and implement
+`_process_pubsub_message` method.
+
+To use it in fastapi. Add it into app/core/websocket.py and modify the
+`startup_handler` and `shutdown_handler` in `app/core/events.py`
+"""
+
 from ast import ExceptHandler
 import asyncio
 from typing import Dict, Any, Optional, List, Set, Union
@@ -8,6 +17,7 @@ from loguru import logger
 import redis.asyncio as aioredis
 
 logger.disable(__name__)
+
 
 class ConnectionNotInitialized(Exception):
     def __str__(self):
