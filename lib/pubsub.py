@@ -10,14 +10,13 @@ To use it in fastapi. Add it into app/core/websocket.py and modify the
 from ast import ExceptHandler
 import asyncio
 from typing import Dict, Any, Optional, List, Set, Union
-import json
+import orjson
 from abc import ABC, abstractmethod
 from fastapi import WebSocket
 from loguru import logger
 import redis.asyncio as aioredis
 
 logger.disable(__name__)
-
 
 class ConnectionNotInitialized(Exception):
     def __str__(self):
@@ -120,7 +119,7 @@ class RedisPubSubManager(PubSubInterface):
         self.message_queues.clear()
         self.callbacks.clear()
         
-    async def publish(self, topic: str, message: str) -> None:
+    async def publish(self, topic: str, message: str | bytes) -> None:
         if not self.conn:
             raise ConnectionNotInitialized()
         
@@ -261,7 +260,7 @@ class InMemoryPubSubManager(PubSubInterface):
         # Only initialize once due to singleton pattern
         if not hasattr(self, 'initialized'):
             self.initialized = True
-            self.topics: Dict[str, List[str]] = {}
+            self.topics: Dict[str, List[str | bytes]] = {}
             self.subscribers: Dict[str, List[asyncio.Queue]] = {}
             
     async def connect(self) -> None:
@@ -272,7 +271,7 @@ class InMemoryPubSubManager(PubSubInterface):
         self.subscribers.clear()
         logger.info("Disconnected from in-memory PubSub")
         
-    async def publish(self, topic: str, message: str) -> None:
+    async def publish(self, topic: str, message: str | bytes) -> None:
         if topic not in self.topics:
             self.topics[topic] = []
             
@@ -280,7 +279,7 @@ class InMemoryPubSubManager(PubSubInterface):
         
         if topic in self.subscribers:
             for queue in self.subscribers[topic]:
-                await queue.put({"type": "message", "channel": topic, "data": message})
+                await queue.put({"type": "message", "pattern": None, "channel": topic, "data": message})
                 logger.debug(f"Published message to in-memory topic {topic}")
                 
     async def subscribe(self, topic: str) -> asyncio.Queue:
@@ -358,7 +357,7 @@ class WebsocketConnManager(ABC):
     async def _handle_disconnect(self, client_id: str, notification_channel: str | None):
         """Default implementation for disconnect handling"""
         if notification_channel:
-            await self.psm.publish(notification_channel, json.dumps({
+            await self.psm.publish(notification_channel, orjson.dumps({
                 "action": "disconnect",
                 "client_id": client_id
             }))
@@ -398,7 +397,7 @@ class WebsocketConnManager(ABC):
         await self._subscribe_to_channel(channel)
         
         # Notify others about new client
-        await self.psm.publish(channel, json.dumps({
+        await self.psm.publish(channel, orjson.dumps({
             "action": "join",
             "client_id": client_id
         }))
@@ -411,7 +410,7 @@ class WebsocketConnManager(ABC):
             self.client_channels[client_id].remove(channel)
             
             # Notify others
-            await self.psm.publish(channel, json.dumps({
+            await self.psm.publish(channel, orjson.dumps({
                 "action": "leave",
                 "client_id": client_id
             }))
@@ -457,12 +456,12 @@ class WebsocketConnManager(ABC):
             logger.error(f"Error in channel listener for {channel}: {e}")
             raise
         
-    async def send_message(self, channel: str, message: str, client_id: str):
+    async def send_message(self, channel: str, message: Any, client_id: str):
         """Handle a chat message from a client"""
         if channel not in self.client_channels[client_id]:
             raise Exception(f"Client {client_id} is not in channel {channel}!")
         
-        data_to_publish = json.dumps({
+        data_to_publish = orjson.dumps({
             "action": "send_message",
             "message": message,
             "client_id": client_id
@@ -491,9 +490,9 @@ class ChatRoomManager(WebsocketConnManager):
             
             if isinstance(message_data, str):
                 try:
-                    message = json.loads(message_data)
+                    message = orjson.loads(message_data)
                     logger.debug(f"Parsed JSON message: {message}")
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     logger.error(f"Invalid JSON message: {message_data}")
                     return
             else:
@@ -510,12 +509,12 @@ class ChatRoomManager(WebsocketConnManager):
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections:
                         websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
+                        await websocket.send_json({
                             "type": "chat",
                             "channel": channel,
                             "from": client_id,
                             "message": chat_message
-                        }))
+                        })
                         
                 logger.info(f"Forwarded chat message from {client_id} to all clients in channel {channel}")
                 
@@ -524,11 +523,11 @@ class ChatRoomManager(WebsocketConnManager):
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections and cid != client_id:
                         websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
+                        await websocket.send_json({
                             "type": "join",
                             "channel": channel,
                             "client_id": client_id
-                        }))
+                        })
                         
                 logger.info(f"Notified clients about {client_id} joining channel {channel}")
                 
@@ -537,11 +536,11 @@ class ChatRoomManager(WebsocketConnManager):
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections and cid != client_id:
                         websocket = self.active_connections[cid]
-                        await websocket.send_text(json.dumps({
+                        await websocket.send_json({
                             "type": "leave",
                             "channel": channel,
                             "client_id": client_id
-                        }))
+                        })
                         
                 logger.info(f"Notified clients about {client_id} leaving channel {channel}")
                 
@@ -550,15 +549,36 @@ class ChatRoomManager(WebsocketConnManager):
             raise
 
 
+class DumbBroadcaster(WebsocketConnManager):
+    async def _process_pubsub_message(self, channel: str, message: Any):
+        message_data = message["data"]
 
+        if isinstance(message_data, str):
+            try:
+                message = orjson.loads(message_data)
+            except orjson.JSONDecodeError:
+                return
+        else:
+            message = message_data
 
-class CRDTManager(WebsocketConnManager):
-    async def _process_pubsub_message(self, channel: str, message: Any) -> None:
-        for cid, channels in self.client_channels.items():
+        message_data = message.get("message", None)
+        if isinstance(message_data, str):
+            try:
+                message["message"] = orjson.loads(message_data)
+            except orjson.JSONDecodeError:
+                return
+
+        for cid, channels in self.client_channels.items(): # 
             if channel in channels: # client `cid` subscribes this channel
                 websocket = self.active_connections[cid]
                 await websocket.send_json(message)
+    
 
+
+# ==============================================================================
+# Testing
+# ==============================================================================
+                
 
 class MockWebSocket:
     def __init__(self, client_id: str):
@@ -572,13 +592,9 @@ class MockWebSocket:
         self.messages.append(message)
         logger.info(f"Sent message to mock client {self.client_id}: {message}")
 
-    async def send_json(self, data: any) -> None:
-        message = json.dumps(data)
+    async def send_json(self, data: Any) -> None:
+        message = orjson.dumps(data)
         await self.send_text(message)
-        
-    async def receive_text(self) -> str:
-        return json.dumps({"test": "data"})  # Default test response
-
 
 # NOTE, in test, we uses `sleep` to artificially wait for operations to finish before
 # checking results. Whereas in real world, we don't need to do so
@@ -642,11 +658,11 @@ async def test_chat_room():
     logger.info("ChatRoomManager test completed")
 
 
-async def test_crdt_manager():
+async def test_dumbbroadcaster():
     """Test the CRDTManager functionality"""
-    logger.info("Testing CRDTManager")
+    logger.info("Testing DumbBroadcaster")
         
-    manager = CRDTManager("redis://localhost:6379")
+    manager = DumbBroadcaster("redis://localhost:6379")
     await manager.initialize()
         
     # Give connection time to fully establish
@@ -668,17 +684,17 @@ async def test_crdt_manager():
     await asyncio.sleep(0.3)
         
     # Send CRDT operations
-    insert_op = json.dumps({
+    insert_op = {
         "type": "insert",
         "position": 0,
         "content": "Hello, world!"
-    })
+    }
         
-    delete_op = json.dumps({
+    delete_op = {
         "type": "delete",
         "position": 5,
         "count": 7
-    })
+    }
         
     await manager.send_message("doc1", insert_op, "user1")
     await asyncio.sleep(0.5)  # Give more time for message propagation
@@ -713,8 +729,7 @@ async def main():
     logger.info("Starting tests")
     
     # await test_chat_room()
-    # await asyncio.sleep(1.0)  # Add delay between tests
-    await test_crdt_manager()
+    await test_dumbbroadcaster()
     
     logger.info("All tests completed")
 

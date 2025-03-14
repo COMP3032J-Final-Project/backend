@@ -19,3 +19,4 @@ python-jose[cryptography]~=3.4.0
 redis[hiredis]~=5.2.1
 sqlmodel~=0.0.22
 uvicorn==0.21.1
+orjson~=3.10.15
