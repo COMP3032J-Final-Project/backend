@@ -269,73 +269,42 @@ class RedisPubSubManager(PubSubInterface):
 
 class InMemoryPubSubManager(PubSubInterface):
     _instance = None
+    """
+    NOTE: NEVER use it in production!
+    """
     
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
             cls._instance = super(InMemoryPubSubManager, cls).__new__(cls)
         return cls._instance
     
-    def __init__(self, max_messages_per_topic: int = 1000, message_ttl: float = 3600):
+    def __init__(self):
         # Only initialize once due to singleton pattern
         if not hasattr(self, 'initialized'):
             self.initialized = True
             self.topics: Dict[str, List[Tuple[float, str | bytes]]] = {}  # topic -> [(timestamp, message)]
             self.subscribers: Dict[str, List[asyncio.Queue]] = {}
-            self.max_messages_per_topic = max_messages_per_topic
-            self.message_ttl = message_ttl  # TTL in seconds
             self.cleanup_task = None
             
     async def connect(self) -> None:
         logger.info("Connected to in-memory PubSub")
         # Start cleanup task
-        self.cleanup_task = asyncio.create_task(self._cleanup_old_messages())
         
     async def disconnect(self) -> None:
-        if self.cleanup_task and not self.cleanup_task.done():
-            self.cleanup_task.cancel()
-            try:
-                await self.cleanup_task
-            except asyncio.CancelledError:
-                pass
-                
         self.topics.clear()
         self.subscribers.clear()
         logger.info("Disconnected from in-memory PubSub")
         
-    async def _cleanup_old_messages(self):
-        """Periodically clean up old messages"""
-        try:
-            while True:
-                await asyncio.sleep(60)  # Run cleanup every minute
-                current_time = time.time()
-                
-                for topic in list(self.topics.keys()):
-                    # Remove messages older than TTL
-                    self.topics[topic] = [
-                        (ts, msg) for ts, msg in self.topics[topic]
-                        if ts > current_time - self.message_ttl
-                    ]
-                    
-                    # If topic has too many messages, trim it
-                    if len(self.topics[topic]) > self.max_messages_per_topic:
-                        # Keep only the most recent messages
-                        self.topics[topic] = self.topics[topic][-self.max_messages_per_topic:]
-                        
-        except asyncio.CancelledError:
-            logger.info("Message cleanup task cancelled")
         
     async def publish(self, topic: str, message: str | bytes) -> None:
         current_time = time.time()
+        if isinstance(message, bytes):
+            message = message.decode()
         
         if topic not in self.topics:
             self.topics[topic] = []
             
-        # Store message with timestamp
         self.topics[topic].append((current_time, message))
-        
-        # Trim if needed
-        if len(self.topics[topic]) > self.max_messages_per_topic:
-            self.topics[topic] = self.topics[topic][-self.max_messages_per_topic:]
         
         if topic in self.subscribers:
             for queue in self.subscribers[topic]:
