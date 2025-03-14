@@ -365,6 +365,9 @@ class InMemoryPubSubManager(PubSubInterface):
 
 
 class WebsocketConnManager(ABC):
+    """
+    NOTE: rate limit is not tested.
+    """
     _instance = None
     
     def __new__(cls, *args, **kwargs):
@@ -377,7 +380,7 @@ class WebsocketConnManager(ABC):
         url: Optional[str] = None,
         batch_size: int = 10,
         batch_interval: float = 0.1,
-        rate_limit: int = 100,
+        rate_limit: Optional[int] = None,
         rate_period: float = 60.0
     ):
         # Initialize attributes only once (singleton pattern)
@@ -622,6 +625,9 @@ class WebsocketConnManager(ABC):
         Check if a client has exceeded their rate limit
         Returns True if client is within limits, False if rate limited
         """
+        if not self.rate_limit:
+            return True
+        
         # Remove timestamps older than the rate period
         self.client_message_counts[client_id] = [
             t for t in self.client_message_counts[client_id]
@@ -635,23 +641,26 @@ class WebsocketConnManager(ABC):
         if channel not in self.client_channels[client_id]:
             raise Exception(f"Client {client_id} is not in channel {channel}!")
         
-        # Add current timestamp
-        current_time = time.time()
-        if client_id not in self.client_message_counts:
-            self.client_message_counts[client_id] = []
-        self.client_message_counts[client_id].append(current_time)
-        
-        # Check rate limit
-        if not await self._check_rate_limit(client_id, current_time):
-            logger.warning(f"Rate limit exceeded for client {client_id}")
-            # Optionally notify client they've been rate limited
-            if client_id in self.active_connections:
-                websocket = self.active_connections[client_id]
-                await websocket_send_json(websocket, {
-                    "error": "rate_limit_exceeded",
-                    "message": "You are sending messages too quickly. Please slow down."
-                })
-            return
+        if self.rate_limit:
+            current_time = time.time()
+            
+            if client_id not in self.client_message_counts:
+                self.client_message_counts[client_id] = []
+                
+            # Add current timestamp
+            self.client_message_counts[client_id].append(current_time)
+            
+            # Check rate limit
+            if not await self._check_rate_limit(client_id, current_time):
+                logger.warning(f"Rate limit exceeded for client {client_id}")
+                # Optionally notify client they've been rate limited
+                if client_id in self.active_connections:
+                    websocket = self.active_connections[client_id]
+                    await websocket_send_json(websocket, {
+                        "error": "rate_limit_exceeded",
+                        "message": "You are sending messages too quickly. Please slow down."
+                    })
+                return
         
         data_to_publish = orjson.dumps({
             "action": "send_message",
