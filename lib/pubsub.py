@@ -376,35 +376,32 @@ class WebsocketConnManager(ABC):
         rate_limit: Optional[int] = None,
         rate_period: float = 60.0
     ):
-        # Initialize attributes only once (singleton pattern)
-        if not hasattr(self, 'initialized'):
-            self.initialized = True
-            self.active_connections: Dict[str, WebSocket] = {}
-            # Track which channels each client is subscribed to
-            self.client_channels: Dict[str, Set[str]] = {}
-            # Track active channel listeners
-            self.channel_tasks: Dict[str, asyncio.Task] = {}
-            
-            # Message batching
-            self.batch_size = batch_size
-            self.batch_interval = batch_interval
-            self.message_batches: Dict[str, List[Any]] = {}  # client_id -> messages
-            self.batch_tasks: Dict[str, asyncio.Task] = {}
-            
-            # Rate limiting
-            self.rate_limit = rate_limit  # Max messages per period
-            self.rate_period = rate_period  # Period in seconds
-            self.client_message_counts: Dict[str, List[float]] = {}  # client_id -> list of timestamps
-            
-            if url is None or url.startswith("memory://"):
-                self.psm = InMemoryPubSubManager()
-                logger.info("Using in-memory PubSub manager")
-            elif url.startswith("redis://"):
-                self.psm = RedisPubSubManager(url)
-                logger.info(f"Using Redis PubSub manager with URL: {url}")
-            else:
-                raise ValueError(f"Unsupported URL scheme: {url}")
-            
+        self.active_connections: Dict[str, WebSocket] = {}
+        # Track which channels each client is subscribed to
+        self.client_channels: Dict[str, Set[str]] = {}
+        # Track active channel listeners
+        self.channel_tasks: Dict[str, asyncio.Task] = {}
+
+        # Message batching
+        self.batch_size = batch_size
+        self.batch_interval = batch_interval
+        self.message_batches: Dict[str, List[Any]] = {}  # client_id -> messages
+        self.batch_tasks: Dict[str, asyncio.Task] = {}
+
+        # Rate limiting
+        self.rate_limit = rate_limit  # Max messages per period
+        self.rate_period = rate_period  # Period in seconds
+        self.client_message_counts: Dict[str, List[float]] = {}  # client_id -> list of timestamps
+
+        if url is None or url.startswith("memory://"):
+            self.psm = InMemoryPubSubManager()
+            logger.info("Using in-memory PubSub manager")
+        elif url.startswith("redis://"):
+            self.psm = RedisPubSubManager(url)
+            logger.info(f"Using Redis PubSub manager with URL: {url}")
+        else:
+            raise ValueError(f"Unsupported URL scheme: {url}")
+
     async def initialize(self):
         """Initialize the connection to the PubSub backend"""
         await self.psm.connect()
