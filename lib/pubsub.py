@@ -697,19 +697,19 @@ class DumbBroadcaster(WebsocketConnManager):
             try:
                 parsed_message["message"] = orjson.loads(nested_message)
             except orjson.JSONDecodeError:
-                return
+                # user may send plain text
+                pass
         
         # Get clients subscribed to this channel
         client_ids = [
             cid
             for cid, channels in self.client_channels.items()
-            if channel in channels # client as subscribed this channel
+            if channel in channels
         ]
         
-        if not client_ids:  # No clients to send to
+        if not client_ids:
             return
         
-        # Serialize the message once instead of for each client
         serialized_message = orjson.dumps(parsed_message)
         
         # Send to all subscribed clients
