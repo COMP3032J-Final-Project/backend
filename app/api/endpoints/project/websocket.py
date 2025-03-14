@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Path, Depends, WebSocket, WebSocketDisconnect
 from app.core.config import settings
-from app.core.websocket import dumb_broadcaster
+from app.core.websocket import dumb_broadcaster, cursor_tracking_broadcaster
 import json
 
 router = APIRouter()
@@ -13,17 +13,17 @@ async def cursor(
     await websocket.accept()
     channel = f"proj:{project_id}/cursor"
     fake_user_id = str(hash(websocket))
-    await dumb_broadcaster.connect(fake_user_id, websocket)
-    await dumb_broadcaster.subscribe_client_to_channel(
+    await cursor_tracking_broadcaster.connect(fake_user_id, websocket)
+    await cursor_tracking_broadcaster.subscribe_client_to_channel(
         fake_user_id, channel
     )
 
     try:
         while True:
             message = await websocket.receive_text()
-            await dumb_broadcaster.send_message(channel, message, fake_user_id)
+            await cursor_tracking_broadcaster.send_message(channel, message, fake_user_id)
     except WebSocketDisconnect:
-        await dumb_broadcaster.disconnect(fake_user_id)
+        await cursor_tracking_broadcaster.disconnect(fake_user_id)
         pass
 
 

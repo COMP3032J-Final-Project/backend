@@ -11,7 +11,7 @@ from app.seed.default_admin import create_default_admin
 
 from .config import settings
 from .db import engine
-from .websocket import dumb_broadcaster, chatroom_manager
+from .websocket import dumb_broadcaster, chatroom_manager, cursor_tracking_broadcaster
 
 async def startup_handler() -> None:
     """
@@ -25,6 +25,7 @@ async def startup_handler() -> None:
         await create_default_admin(db)
 
     await dumb_broadcaster.initialize()
+    await cursor_tracking_broadcaster.initialize()
     await chatroom_manager.initialize()
 
 
@@ -33,6 +34,7 @@ async def shutdown_handler() -> None:
     应用关闭时的处理函数
     """
     await dumb_broadcaster.cleanup()
+    await cursor_tracking_broadcaster.cleanup()
     await chatroom_manager.cleanup()
     
 

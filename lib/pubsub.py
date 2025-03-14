@@ -367,14 +367,7 @@ class InMemoryPubSubManager(PubSubInterface):
 class WebsocketConnManager(ABC):
     """
     NOTE: rate limit is not tested.
-    """
-    _instance = None
-    
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(WebsocketConnManager, cls).__new__(cls)
-        return cls._instance
-    
+    """    
     def __init__(
         self,
         url: Optional[str] = None,
@@ -684,7 +677,7 @@ class ChatRoomManager(WebsocketConnManager):
         pass
 
 
-class DumbBroadcaster(WebsocketConnManager):
+class DumbBroadcaster(WebsocketConnManager):    
     """Simple broadcaster that forwards messages to all subscribed clients"""
     async def _process_pubsub_message(self, channel: str, message: Any):
         # Get message data once
@@ -730,12 +723,24 @@ class DumbBroadcaster(WebsocketConnManager):
                     await self.add_message_to_batch(cid, parsed_message)
                 else:
                     send_tasks.append(
-                        websocket.send_bytes(serialized_message)
+                        websocket.send_text(serialized_message.decode())
                     )
         
         # Wait for all sends to complete if not batching
         if send_tasks:
             await asyncio.gather(*send_tasks)
+
+class CursorTrackingBroadcaster(DumbBroadcaster):
+    """
+    allow more frequent message broadcasting
+    """
+    def __init__(
+        self,
+        url,
+        batch_interval: float = 0.025, # 40 fps
+        **kwargs
+    ):
+        super().__init__(url, batch_interval=batch_interval, **kwargs)
 
                 
 # ==============================================================================
