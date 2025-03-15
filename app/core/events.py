@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.deps import get_db
 from app.api.router import router
@@ -13,6 +14,7 @@ from .config import settings
 from .db import engine
 from .websocket import dumb_broadcaster, chatroom_manager, cursor_tracking_broadcaster
 
+
 async def startup_handler() -> None:
     """
     应用启动时的处理函数
@@ -20,7 +22,7 @@ async def startup_handler() -> None:
     # 在应用启动时创建所有表格
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async for db in get_db():
         await create_default_admin(db)
 
@@ -36,7 +38,6 @@ async def shutdown_handler() -> None:
     await dumb_broadcaster.cleanup()
     await cursor_tracking_broadcaster.cleanup()
     await chatroom_manager.cleanup()
-    
 
 
 def configure_middleware(app: FastAPI) -> None:
@@ -87,6 +88,17 @@ def configure_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         # HTTP异常处理
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": exc.status_code,
+                "data": None,
+                "msg": exc.detail,
+            }
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             content={

@@ -1,30 +1,92 @@
-from fastapi import (
-    APIRouter, WebSocket, Depends, Path
-)
+from typing import Annotated
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Depends
 
-from .lib import validate_project_id
+from app.api.deps import (
+    get_current_project,
+    get_current_user,
+    get_db,
+)
+from app.models.base import APIResponse
+from app.models.project.project import Project, ProjectCreate, ProjectUpdate, ProjectID, ProjectPermission
+from app.models.user import User
+from app.repositories.project.project import ProjectDAO
+
 from . import file, websocket
 
 router = APIRouter()
 
-
 router.include_router(
     file.router,
-    prefix="/{project_id}/files", 
+    prefix="/{project_id:uuid}/files",
     tags=["项目文件"],
-    dependencies=[Depends(validate_project_id)]
+    dependencies=[Depends(get_current_project)],
 )
 
 router.include_router(
     websocket.router,
-    prefix="/{project_id}/ws", 
+    prefix="/{project_id:uuid}/ws",
     tags=["websocket"],
-    dependencies=[Depends(validate_project_id)]
+    dependencies=[Depends(get_current_project)],
 )
 
 
-@router.get("/{project_id}", tags=["项目信息"])
-async def get_project(project_id: str = Depends(validate_project_id)):
-    return {"project_id": project_id}
+@router.post("/create", response_model=APIResponse[ProjectID])
+async def create_project(
+        project_create: ProjectCreate,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    new_project = await ProjectDAO.create_project(current_user.id, project_create, db)
+    await ProjectDAO.add_member(new_project, current_user, db, ProjectPermission.ADMIN)
+    return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 
+@router.get("/{project_id:uuid}", response_model=APIResponse[Project])
+async def get_project(
+        current_user: Annotated[User, Depends(get_current_user)],
+        current_project: Annotated[Project, Depends(get_current_project)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+):
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    if not is_member:
+        raise HTTPException(
+            status_code=403, detail="No permission to access this project"
+        )
+    return APIResponse(code=200, data=current_project, msg="success")
+
+
+@router.put("/{project_id:uuid}", response_model=APIResponse[Project])
+async def update_project(
+        project_update: ProjectUpdate,
+        current_user: Annotated[User, Depends(get_current_user)],
+        current_project: Annotated[Project, Depends(get_current_project)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    # 检查用户是否具有项目管理权限
+    is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
+    if not is_admin:
+        raise HTTPException(
+            status_code=403, detail="No permission to update this project"
+        )
+
+    updated_project = await ProjectDAO.update_project(
+        current_project, project_update, db
+    )
+    return APIResponse(code=200, data=updated_project, msg="Project updated")
+
+
+@router.delete("/{project_id:uuid}", response_model=APIResponse)
+async def delete_project(
+        current_user: Annotated[User, Depends(get_current_user)],
+        current_project: Annotated[Project, Depends(get_current_project)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    # 检查用户是否为项目创建者
+    is_founder = await ProjectDAO.is_project_founder(current_project, current_user)
+    if not is_founder:
+        raise HTTPException(
+            status_code=403, detail="No permission to delete this project"
+        )
+    await ProjectDAO.delete_project(current_project, db)
+    return APIResponse(msg="Project deleted")
