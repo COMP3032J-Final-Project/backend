@@ -74,11 +74,17 @@ async def update_user(
     """
     更新当前用户信息
     """
+
     updated_user = await UserDAO.update_user(
         current_user,
         user_update_me,
         db
     )
+    if updated_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already taken"
+        )
     user_info = UserInfo.model_validate(updated_user)
     return APIResponse(code=200, data=user_info, msg="User updated")
 

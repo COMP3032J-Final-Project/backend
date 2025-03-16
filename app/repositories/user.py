@@ -2,6 +2,7 @@
 import uuid
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -78,7 +79,10 @@ class UserDAO:
         update_data = user_update.model_dump(exclude_unset=True, exclude_none=True)
         for field, value in update_data.items():
             setattr(user, field, value)
-
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return None
         await db.refresh(user)
         return user
