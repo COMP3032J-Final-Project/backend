@@ -32,9 +32,14 @@ this is the repository hosting the backend for the COMP3032J Final Project.
       ```
 
 4. 安装 Python 依赖
-   ``` sh
-   pip install -r ./requirements_full.txt
-   ```
+   - 完全依赖（目前Windows不支持部分包）
+      ``` sh
+      pip install -r ./requirements_full.txt
+      ```
+   - 后端依赖
+      ``` sh
+      pip install -r ./requirements.txt
+      ```
 
 # 运行
 
