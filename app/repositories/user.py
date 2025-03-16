@@ -75,7 +75,7 @@ class UserDAO:
             db: AsyncSession
     ) -> Optional[User]:
         """更新用户本人信息"""
-        update_data = user_update.model_dump(exclude_unset=True)  # 过滤掉未设置的字段
+        update_data = user_update.model_dump(exclude_unset=True, exclude_none=True)
         for field, value in update_data.items():
             setattr(user, field, value)
 
