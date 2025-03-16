@@ -45,3 +45,13 @@ async def crdt(
     except WebSocketDisconnect:
         await dumb_broadcaster.disconnect(fake_user_id)
         pass
+
+
+@router.websocket("/chat")
+async def chat(
+    websocket: WebSocket,
+    project_id: str = Path(..., description="The ID of the project")
+):
+    await websocket.accept()
+    fake_user_id = str(hash(websocket))
+

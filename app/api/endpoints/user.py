@@ -1,11 +1,10 @@
 # User 相关的 API 路由
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, get_target_user
 from app.core.security import verify_password, get_password_hash
 from app.models.base import APIResponse
 from app.models.user import User, UserVerifyPwd, UserUpdatePwd
@@ -55,7 +54,7 @@ async def register(
 
 
 @router.get("/me", response_model=APIResponse[UserInfo])
-async def get_user(
+async def get_me(
         current_user: Annotated[User, Depends(get_current_user)]
 ) -> APIResponse[UserInfo]:
     """
@@ -66,7 +65,7 @@ async def get_user(
 
 
 @router.put("/me", response_model=APIResponse[UserInfo])
-async def update_user(
+async def update_me(
         user_update_me: UserUpdate,
         current_user: Annotated[User, Depends(get_current_user)],
         db: Annotated[AsyncSession, Depends(get_db)]
@@ -133,3 +132,14 @@ async def update_pwd(
     current_user.hashed_password = get_password_hash(new_password)
     await db.commit()
     return APIResponse(code=200, msg="Password updated")
+
+
+@router.get("/{username:str}", response_model=APIResponse[UserInfo])
+async def get_user(
+        target_user: Annotated[User, Depends(get_target_user)],
+) -> APIResponse[UserInfo]:
+    """
+    通过用户名获取用户信息
+    """
+    user_info = UserInfo.model_validate(target_user)
+    return APIResponse[UserInfo](code=200, data=user_info, msg="success")

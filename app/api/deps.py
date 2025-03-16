@@ -60,6 +60,20 @@ async def get_current_user(
     return user
 
 
+async def get_target_user(
+        username: Annotated[str, Path(...)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """通过用户名获取用户"""
+    user = await UserDAO.get_user_by_username(username, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
+
 async def get_current_project(
         project_id: Annotated[uuid.UUID, Path(..., description="The ID of the project")],
         db: Annotated[AsyncSession, Depends(get_db)],

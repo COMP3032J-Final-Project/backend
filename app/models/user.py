@@ -41,7 +41,7 @@ class User(BaseDB, table=True):
     # TODO 完善用户删除后的级联操作
     projects: List["ProjectUser"] = Relationship(
         back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
 
     def __repr__(self) -> str:
