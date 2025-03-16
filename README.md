@@ -12,12 +12,25 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 1. 根目录下创建 `.env` 文件，示例文件在 [.env.example](./.env.example)
 2. 如果`USE_SQLITE`不是`true`你则需要在`MySQL/MariaDB`中创建和 `.env` 中的数据库名称对应的
    数据库。
-3. 创建 python 虚拟环境并激活，示例:
-   ``` sh
+3. 创建 python 虚拟环境并激活
+   - 创建python 虚拟环境：
+   ```sh
    python -m venv .venv
-   . .venv/bin/activate # for Linux/MacOS bash shell
-   # Windows PowerShell: venv\Scripts\Activate.ps1
    ```
+   - 激活 venv
+      - Linux/MacOS Bash
+      ```sh
+      .venv/bin/activate 
+      ```
+      - Windows CMD
+      ```sh
+      .venv\Scripts\activate.bat
+      ```
+      - Windows PowerShell
+      ```sh
+      .venv\Scripts\Activate.ps1
+      ```
+
 4. 安装 Python 依赖
    ``` sh
    pip install -r ./requirements_full.txt
