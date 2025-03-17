@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_current_project
 
 # 导入子模块路由
-from . import file, project, websocket, member
+from . import file, project, websocket, member, chat
 
 router = APIRouter()
 
@@ -23,9 +23,14 @@ router.include_router(
     dependencies=[Depends(get_current_project)],
 )
 
-# 注册成员管理相关路由
 router.include_router(
     member.router,
     prefix="/{project_id:uuid}/members",
     tags=["项目成员"],
+)
+
+router.include_router(
+    chat.router,
+    prefix="/{project_id:uuid}/chat",
+    tags=["项目群聊"],
 )
