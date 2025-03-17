@@ -9,25 +9,24 @@ from app.models.project.project import (
     ProjectCreate,
     ProjectPermission,
     ProjectUpdate,
-    ProjectUser, MemberPermission,
+    ProjectUser,
 )
 from app.models.user import User
-from app.repositories.user import UserDAO
 
 
 class ProjectDAO:
     @staticmethod
     async def get_project_by_id(
-            project_id: uuid.UUID,
-            db: AsyncSession,
+        project_id: uuid.UUID,
+        db: AsyncSession,
     ) -> Optional[Project]:
         return await db.get(Project, project_id)
 
     @staticmethod
     async def create_project(
-            user_id: uuid.UUID,
-            project_create: ProjectCreate,
-            db: AsyncSession,
+        user_id: uuid.UUID,
+        project_create: ProjectCreate,
+        db: AsyncSession,
     ) -> Project:
         project = Project(
             name=project_create.name,
@@ -41,9 +40,9 @@ class ProjectDAO:
 
     @staticmethod
     async def update_project(
-            project: Project,
-            project_update: ProjectUpdate,
-            db: AsyncSession,
+        project: Project,
+        project_update: ProjectUpdate,
+        db: AsyncSession,
     ) -> Project:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
         for field in update_data:
@@ -53,17 +52,17 @@ class ProjectDAO:
 
     @staticmethod
     async def delete_project(
-            project: Project,
-            db: AsyncSession,
+        project: Project,
+        db: AsyncSession,
     ) -> None:
         await db.delete(project)
         await db.commit()
 
     @staticmethod
     async def get_project_permission(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> Any | None:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
@@ -77,58 +76,49 @@ class ProjectDAO:
 
     @staticmethod
     async def is_project_owner(
-            project: Project,
-            user: User,
+        project: Project,
+        user: User,
     ) -> bool:
         return project.owner_id == user.id
 
     @staticmethod
     async def is_project_admin(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> bool:
         """
         判断用户是否为项目管理员
         """
-        return (
-                await ProjectDAO.get_project_permission(project, user, db)
-                == ProjectPermission.ADMIN
-        )
+        return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.ADMIN
 
     @staticmethod
     async def is_project_writer(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> bool:
         """
         判断用户是否为项目成员
         """
-        return (
-                await ProjectDAO.get_project_permission(project, user, db)
-                == ProjectPermission.WRITER
-        )
+        return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.WRITER
 
     @staticmethod
     async def is_project_viewer(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> bool:
         """
         判断用户是否为项目查看者
         """
-        return (
-                await ProjectDAO.get_project_permission(project, user, db)
-                == ProjectPermission.VIEWER
-        )
+        return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.VIEWER
 
     @staticmethod
     async def is_project_member(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> bool:
         """
         判断用户是否为项目成员
@@ -142,8 +132,8 @@ class ProjectDAO:
 
     @staticmethod
     async def get_members(
-            project: Project,
-            db: AsyncSession,
+        project: Project,
+        db: AsyncSession,
     ) -> list[Optional[User]]:
         project_users = project.users
         members = []
@@ -154,22 +144,20 @@ class ProjectDAO:
 
     @staticmethod
     async def add_member(
-            project: Project,
-            user: User,
-            permission: ProjectPermission,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        permission: ProjectPermission,
+        db: AsyncSession,
     ) -> None:
-        project_user = ProjectUser(
-            project_id=project.id, user_id=user.id, permission=permission
-        )
+        project_user = ProjectUser(project_id=project.id, user_id=user.id, permission=permission)
         db.add(project_user)
         await db.commit()
 
     @staticmethod
     async def remove_member(
-            project: Project,
-            user: User,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        db: AsyncSession,
     ) -> None:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
@@ -182,10 +170,10 @@ class ProjectDAO:
 
     @staticmethod
     async def update_member(
-            project: Project,
-            user: User,
-            permission: ProjectPermission,
-            db: AsyncSession,
+        project: Project,
+        user: User,
+        permission: ProjectPermission,
+        db: AsyncSession,
     ) -> None:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
