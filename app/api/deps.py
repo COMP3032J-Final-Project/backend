@@ -4,7 +4,10 @@ from typing import AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status, Path
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.websockets import WebSocket, WebSocketDisconnect
+
 from app.core.config import settings
 from app.core.db import async_session
 from app.models.project.project import Project
@@ -58,6 +61,39 @@ async def get_current_user(
     if not user or not user.is_active:
         raise credentials_exception
     return user
+
+
+async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, Depends(get_db)]) -> User:
+    """
+    获取当前用户
+    """
+    try:
+        token = websocket.query_params.get("token")
+        if not token:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
+
+        # 解码token
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            token_data = TokenPayload(**payload)
+        except JWTError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
+
+        try:
+            user_id = uuid.UUID(str(token_data.sub))  # 将字符串转换为UUID
+        except ValueError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
+
+        user = await UserDAO.get_user_by_id(user_id, db)
+        if not user or not user.is_active:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
+        return user
+    except WebSocketDisconnect:
+        logger.info("WebSocket connection closed (expected on invalid token)")
 
 
 async def get_target_user(

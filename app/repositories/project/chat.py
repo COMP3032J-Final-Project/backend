@@ -1,7 +1,10 @@
 import uuid
+from datetime import datetime
+from typing import Optional, Tuple, Sequence
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.models.project.chat import ChatMessage, ChatRoom, ChatMessageType, ChatRoomUpdate
 from app.models.user import User
@@ -18,7 +21,7 @@ class ChatDAO:
         创建聊天室
         """
         chat_room = ChatRoom(
-            name=name+" Chat Room",
+            name=name + " Chat Room",
             project_id=project_id,
         )
         db.add(chat_room)
@@ -49,6 +52,7 @@ class ChatDAO:
         content: str,
         room_id: uuid.UUID,
         sender_id: uuid.UUID,
+        create_at: datetime,
         db: AsyncSession,
     ) -> ChatMessage:
         """
@@ -59,8 +63,34 @@ class ChatDAO:
             content=content,
             room_id=room_id,
             sender_id=sender_id,
+            created_at=create_at,
+            updated_at=create_at,
         )
         db.add(chat_message)
         await db.commit()
         await db.refresh(chat_message)
         return chat_message
+
+    @staticmethod
+    async def get_history_messages(
+        chat_room: ChatRoom,
+        max_num: int,
+        db: AsyncSession,
+        before: Optional[datetime] = None,
+    ) -> tuple[Sequence[ChatMessage], bool]:
+        """
+        获取before时间之前的max_num条历史消息
+        """
+        query = select(ChatMessage).where(ChatMessage.room_id == chat_room.id)
+        if before:
+            query = query.where(ChatMessage.created_at < before)
+
+        # 查询时多取一条记录
+        query = query.order_by(ChatMessage.created_at.desc()).limit(max_num + 1)
+        result = await db.execute(query)
+        messages = result.scalars().all()
+        # 判断是否还有更多消息
+        has_more = len(messages) > max_num
+        if has_more:
+            messages = messages[:max_num]
+        return messages, has_more
