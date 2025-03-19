@@ -20,6 +20,9 @@ class UserDAO:
         """
         通过用户ID获取用户
         """
+        user = await db.get(User, user_id)
+        if not user or not user.is_active:
+            return None
         return await db.get(User, user_id)
 
     @staticmethod
@@ -32,7 +35,10 @@ class UserDAO:
         """
         query = select(User).where(User.email == email)
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            return None
+        return user
 
     @staticmethod
     async def get_user_by_username(
@@ -44,7 +50,10 @@ class UserDAO:
         """
         query = select(User).where(User.username == username)
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            return None
+        return user
 
     @staticmethod
     async def create_user(
@@ -86,3 +95,15 @@ class UserDAO:
             return None
         await db.refresh(user)
         return user
+
+
+    @staticmethod
+    async def delete_user(
+        user: User,
+        db: AsyncSession,
+    ) -> None:
+        """假删除用户"""
+        user.username = f"deleted_user_{user.id}"
+        user.email = f"deleted_{user.id}@deleted.com"
+        user.is_active = False
+        await db.commit()

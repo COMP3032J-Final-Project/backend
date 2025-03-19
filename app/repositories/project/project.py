@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional, Any
+from typing import Optional, Any, List, Type
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -21,6 +21,21 @@ class ProjectDAO:
         db: AsyncSession,
     ) -> Optional[Project]:
         return await db.get(Project, project_id)
+
+    @staticmethod
+    async def get_projects(
+        user: User,
+        db: AsyncSession,
+    ) -> list[Optional[Project]]:
+        """
+        获取当前用户的所有项目
+        """
+        user_projects = user.projects
+        projects = []
+        for user_project in user_projects:
+            project = await db.get(Project, user_project.project_id)
+            projects.append(project)
+        return projects
 
     @staticmethod
     async def create_project(

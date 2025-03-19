@@ -30,8 +30,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
-        access_token: Annotated[str, Depends(oauth2_scheme)],
-        db: Annotated[AsyncSession, Depends(get_db)],
+    access_token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """
     获取当前用户
@@ -55,28 +55,25 @@ async def get_current_user(
         raise credentials_exception
 
     user = await UserDAO.get_user_by_id(user_id, db)
-    if user is None:
+    if not user or not user.is_active:
         raise credentials_exception
     return user
 
 
 async def get_target_user(
-        username: Annotated[str, Path(...)],
-        db: Annotated[AsyncSession, Depends(get_db)],
+    username: Annotated[str, Path(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """通过用户名获取用户"""
     user = await UserDAO.get_user_by_username(username, db)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
 
 async def get_current_project(
-        project_id: Annotated[uuid.UUID, Path(..., description="The ID of the project")],
-        db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: Annotated[uuid.UUID, Path(..., description="The ID of the project")],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Project:
     # 验证项目ID
     project = await ProjectDAO.get_project_by_id(project_id, db)

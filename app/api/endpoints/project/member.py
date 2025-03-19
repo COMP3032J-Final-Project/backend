@@ -31,12 +31,15 @@ async def get_members(
     members = await ProjectDAO.get_members(current_project, db)
     members_info = []
     for member in members:
-        member_info = MemberInfo(
-            username=member.username,
-            email=member.email,
-            permission=await ProjectDAO.get_project_permission(current_project, member, db),
-        )
-        members_info.append(member_info)
+        if member.is_active:
+            member_info = MemberInfo(
+                username=member.username,
+                email=member.email,
+                permission=await ProjectDAO.get_project_permission(current_project, member, db),
+            )
+            members_info.append(member_info)
+        else:
+            raise HTTPException(status_code=400, detail=f"Member {member.username} is inactive")
     return APIResponse(code=200, data=members_info, msg="success")
 
 

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -12,6 +12,7 @@ from app.models.project.project import (
     ProjectPermission,
 )
 from app.models.user import User
+# from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 
 router = APIRouter()
@@ -26,7 +27,19 @@ async def create_project(
     """创建新项目"""
     new_project = await ProjectDAO.create_project(current_user.id, project_create, db)
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    # 创建聊天室
+    # await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
+
+
+@router.get("/", response_model=APIResponse[List[Project]])
+async def get_projects(
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[Project]]:
+    """获取当前用户的所有项目"""
+    projects = await ProjectDAO.get_projects(current_user, db)
+    return APIResponse(code=200, data=projects, msg="success")
 
 
 @router.get("/{project_id:uuid}", response_model=APIResponse[Project])
