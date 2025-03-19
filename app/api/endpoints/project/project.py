@@ -12,7 +12,7 @@ from app.models.project.project import (
     ProjectPermission,
 )
 from app.models.user import User
-# from app.repositories.project.chat import ChatDAO
+from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 
 router = APIRouter()
@@ -28,7 +28,7 @@ async def create_project(
     new_project = await ProjectDAO.create_project(current_user.id, project_create, db)
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
     # 创建聊天室
-    # await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
+    await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 
@@ -84,5 +84,6 @@ async def delete_project(
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to delete this project")
+    # !ChatRoom和ChatMessage会被级联删除
     await ProjectDAO.delete_project(current_project, db)
     return APIResponse(msg="Project deleted")

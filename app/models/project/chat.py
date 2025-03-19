@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING
 
 from sqlmodel import Field, Relationship
 
-from app.models.base import BaseDB
-from app.models.project.project import Project
+from app.models.base import BaseDB, Base
 
 if TYPE_CHECKING:
+    from app.models.project.project import Project
     from app.models.user import User
 
 
@@ -43,7 +43,7 @@ class ChatRoom(BaseDB, table=True):
         },
     )
 
-    project: Project = Relationship(back_populates="chat_room")
+    project: "Project" = Relationship(back_populates="chat_room")
     chat_messages: list["ChatMessage"] = Relationship(
         back_populates="chat_room",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
@@ -86,11 +86,15 @@ class ChatMessage(BaseDB, table=True):
         },
     )
 
-    chat_room: ChatRoom = Relationship(back_populates="chat_messages")
-    sender: User = Relationship(back_populates="chat_messages")
+    chat_room: "ChatRoom" = Relationship(back_populates="chat_messages")
+    sender: "User" = Relationship()
 
     def __repr__(self):
         return (
             f"<ChatMessage message_type={self.message_type} content={self.content} "
             f"room_id={self.room_id} sender_id={self.sender_id}>"
         )
+
+
+class ChatRoomUpdate(Base):
+    name: str | None = Field(default=None, max_length=255)

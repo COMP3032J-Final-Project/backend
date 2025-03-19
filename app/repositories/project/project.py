@@ -1,6 +1,7 @@
 import uuid
 from typing import Optional, Any, List, Type
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -58,10 +59,15 @@ class ProjectDAO:
         project: Project,
         project_update: ProjectUpdate,
         db: AsyncSession,
-    ) -> Project:
+    ) -> Optional[Project]:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
         for field in update_data:
             setattr(project, field, update_data[field])
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return None
         await db.refresh(project)
         return project
 
