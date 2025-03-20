@@ -23,7 +23,7 @@ async def update_chat_room(
 ) -> APIResponse[ChatRoomUpdate]:
     """更新聊天室信息"""
     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user)
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_admin and not is_owner:
         return APIResponse(code=403, msg="No permission to update this project")
 

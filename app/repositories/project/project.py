@@ -40,14 +40,11 @@ class ProjectDAO:
 
     @staticmethod
     async def create_project(
-        user_id: uuid.UUID,
         project_create: ProjectCreate,
         db: AsyncSession,
     ) -> Project:
         project = Project(
             name=project_create.name,
-            description=project_create.description,
-            owner_id=user_id,
         )
         db.add(project)
         await db.commit()
@@ -99,8 +96,9 @@ class ProjectDAO:
     async def is_project_owner(
         project: Project,
         user: User,
+        db: AsyncSession,
     ) -> bool:
-        return project.owner_id == user.id
+        return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.OWNER
 
     @staticmethod
     async def is_project_admin(

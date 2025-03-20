@@ -36,16 +36,6 @@ class Project(BaseDB, table=True):
         max_length=255,
         sa_column_kwargs={"index": True, "nullable": False},
     )
-    owner_id: uuid.UUID = Field(
-        ...,
-        foreign_key="users.id",
-        sa_column_kwargs={
-            "nullable": False,
-            "index": True,
-        },
-    )
-    description: str = Field(max_length=255)
-
     users: list["ProjectUser"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
@@ -91,12 +81,10 @@ class ProjectUser(BaseDB, table=True):
 
 class ProjectCreate(Base):
     name: str = Field(..., max_length=255)
-    description: str = Field(..., max_length=255)
 
 
 class ProjectUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
 
 
 class ProjectID(Base):

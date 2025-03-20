@@ -25,7 +25,7 @@ async def create_project(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse:
     """创建新项目"""
-    new_project = await ProjectDAO.create_project(current_user.id, project_create, db)
+    new_project = await ProjectDAO.create_project(project_create, db)
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
     # 创建聊天室
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
@@ -65,7 +65,7 @@ async def update_project(
     """更新项目信息"""
     # 检查用户是否为项目管理员或创建者
     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user)
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user ,db)
     if not is_admin and not is_owner:
         raise HTTPException(status_code=403, detail="No permission to update this project")
 
@@ -81,7 +81,7 @@ async def delete_project(
 ) -> APIResponse:
     """删除项目"""
     # 检查用户是否为项目创建者
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user)
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to delete this project")
     # !ChatRoom和ChatMessage会被级联删除
