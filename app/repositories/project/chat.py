@@ -52,7 +52,7 @@ class ChatDAO:
         content: str,
         room_id: uuid.UUID,
         sender_id: uuid.UUID,
-        create_at: datetime,
+        created_at: datetime,
         db: AsyncSession,
     ) -> ChatMessage:
         """
@@ -63,8 +63,8 @@ class ChatDAO:
             content=content,
             room_id=room_id,
             sender_id=sender_id,
-            created_at=create_at,
-            updated_at=create_at,
+            created_at=created_at,
+            updated_at=created_at,
         )
         db.add(chat_message)
         await db.commit()

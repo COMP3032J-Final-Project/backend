@@ -636,54 +636,54 @@ class ChatRoomManager(WebsocketConnManager):
             timestamp = datetime.now()
 
             # TODO 添加其他消息类型
+            # TODO add a chat bot
+            # 文本消息
             if action == "send_message":
-                chat_message = message.get("message")
-
+                content = message.get("message")
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections:
                         websocket = self.active_connections[cid]
                         await websocket.send_json(
                             {
-                                "type": "text",
-                                "channel": channel,
-                                "from": client_id,
-                                "message": chat_message,
+                                "message_type": "text",
+                                "room_id": channel,
+                                "sender_id": client_id,
+                                "content": content,
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                             }
                         )
                 logger.info(f"Forwarded chat message from {client_id} to all clients in channel {channel}")
                 # 将消息存储到数据库
-                await asyncio.create_task(self._store_message("text", chat_message, channel, client_id, timestamp))
-
+                await asyncio.create_task(self._store_message("text", content, channel, client_id, timestamp))
+            # 成员加入
             elif action == "join":
-                # Notify about new member
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections and cid != client_id:
                         websocket = self.active_connections[cid]
                         await websocket.send_json(
                             {
-                                "type": "join",
-                                "channel": channel,
-                                "client_id": client_id,
+                                "message_type": "join",
+                                "room_id": channel,
+                                "sender_id": client_id,
+                                "content": "Welcome to the chat!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                             }
                         )
                 logger.info(f"Notified clients about {client_id} joining channel {channel}")
-
+            # 成员离开
             elif action == "leave" or action == "disconnect":
-                # Notify about member leaving
                 for cid, channels in self.client_channels.items():
                     if channel in channels and cid in self.active_connections and cid != client_id:
                         websocket = self.active_connections[cid]
                         await websocket.send_json(
                             {
-                                "type": "leave",
-                                "channel": channel,
-                                "client_id": client_id,
+                                "message_type": "leave",
+                                "room_id": channel,
+                                "sender_id": client_id,
+                                "content": "Goodbye!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                             }
                         )
-
                 logger.info(f"Notified clients about {client_id} leaving channel {channel}")
 
         except Exception as e:
@@ -694,17 +694,17 @@ class ChatRoomManager(WebsocketConnManager):
         self,
         message_type: str,
         content: str,
-        channel: str,
-        client_id: str,
-        timestamp: datetime,
+        room_id: str,
+        sender_id: str,
+        created_at: datetime,
     ) -> None:
         """
         Store the message in the database
         """
         try:
             message_type = ChatMessageType(message_type)
-            room_id = uuid.UUID(channel)
-            sender_id = uuid.UUID(client_id)
+            room_id = uuid.UUID(room_id)
+            sender_id = uuid.UUID(sender_id)
 
             async with async_session() as db:
                 await ChatDAO.create_chat_message(
@@ -712,10 +712,10 @@ class ChatRoomManager(WebsocketConnManager):
                     content=content,
                     room_id=room_id,
                     sender_id=sender_id,
-                    create_at=timestamp,
+                    created_at=created_at,
                     db=db,
                 )
-                logger.info(f"Stored {message_type} message from {client_id} in room: {channel}")
+                logger.info(f"Stored {message_type} message from {sender_id} in room: {room_id}")
         except Exception as e:
             logger.error(f"Error storing message in database: {e}")
             raise

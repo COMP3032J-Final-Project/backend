@@ -4,10 +4,11 @@ import secrets
 from typing import List
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings
 
 load_dotenv()
+
 
 class Settings(BaseSettings):
     # 基础配置
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = os.getenv("HIVEY_B_DB_PASSWORD", "password")
     DB_HOST: str = os.getenv("HIVEY_B_DB_HOST", "localhost")
     DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
-    
+
     PUB_SUB_BACKEND_URL: str = os.getenv("HIVEY_B_PUB_SUB_BACKEND_URL", "memory://").strip()
 
     # 管理员
@@ -45,18 +46,19 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
     ADMIN_PASSWORD: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "password")
 
+    # Cloudflare R2 文件服务
+    R2_ENDPOINT_URL: str = os.getenv("HIVEY_B_R2_ENDPOINT_URL", "")
+    R2_ACCESS_KEY: str = os.getenv("HIVEY_B_R2_ACCESS_KEY", "")
+    R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
+    R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         if self.USE_SQLITE:
             return f"sqlite+aiosqlite:///./hivey.db"
         return f"mysql+aiomysql://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
-
-    model_config = {
-        "case_sensitive": True,
-        "env_file": ".env",
-        "env_prefix": "HIVEY_B_"
-    }
+    model_config = {"case_sensitive": True, "env_file": ".env", "env_prefix": "HIVEY_B_"}
 
 
 # 创建设置实例

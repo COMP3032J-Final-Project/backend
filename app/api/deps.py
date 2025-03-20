@@ -53,7 +53,7 @@ async def get_current_user(
         raise credentials_exception
 
     try:
-        user_id = uuid.UUID(str(token_data.sub))  # 将字符串转换为UUID
+        user_id = uuid.UUID(str(token_data.sub))
     except ValueError:
         raise credentials_exception
 
@@ -82,15 +82,15 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
             raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
 
         try:
-            user_id = uuid.UUID(str(token_data.sub))  # 将字符串转换为UUID
+            user_id = uuid.UUID(str(token_data.sub))
         except ValueError:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
 
         user = await UserDAO.get_user_by_id(user_id, db)
         if not user or not user.is_active:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION)
+            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
         return user
     except WebSocketDisconnect:
         logger.info("WebSocket connection closed (expected on invalid token)")

@@ -51,7 +51,6 @@ async def chat(
     websocket: WebSocket,
     current_user: Annotated[User, Depends(get_current_user_ws)],
     current_project: Annotated[Project, Depends(get_current_project)],
-    db: Annotated[AsyncSession, Depends(get_db)],
 ):
 
     try:
@@ -65,19 +64,6 @@ async def chat(
     await websocket.accept()
     await chatroom_manager.connect(current_client_id, websocket)
     await chatroom_manager.subscribe_client_to_channel(current_client_id, current_channel)
-
-    # 加载历史记录 (暂时3条)
-    history_messages, has_more = await ChatDAO.get_history_messages(current_chat_room, 3, db)
-    for message in history_messages:
-        await websocket.send_json(
-            {
-                "type": "history",
-                "channel": current_channel,
-                "from": str(message.sender_id),
-                "message": message.content,
-                "timestamp": message.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            }
-        )
 
     try:
         while True:

@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from sqlmodel import Field, Relationship
 
@@ -17,6 +18,8 @@ class ChatMessageType(str, Enum):
     """
 
     TEXT = "text"
+    JOIN = "join"
+    LEAVE = "leave"
     IMAGE = "image"
     # FILE = "file"
 
@@ -98,3 +101,38 @@ class ChatMessage(BaseDB, table=True):
 
 class ChatRoomUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
+
+
+class ChatHistoryMessage(Base):
+    """
+    聊天历史记录模型
+    """
+
+    message_type: ChatMessageType = Field(
+        default=ChatMessageType.TEXT,
+        sa_column_kwargs={"nullable": False},
+    )
+    content: str = Field(
+        ...,
+        max_length=1000,
+        sa_column_kwargs={"nullable": False},
+    )
+    room_id: uuid.UUID = Field(
+        ...,
+        sa_column_kwargs={"nullable": False},
+    )
+    sender_id: uuid.UUID = Field(
+        ...,
+        sa_column_kwargs={"nullable": False},
+    )
+    timestamp: datetime = Field(
+        ...,
+        sa_column_kwargs={"nullable": False},
+    )
+
+
+class ChatHistoryResponse(Base):
+    """历史记录响应模型"""
+
+    messages: List[ChatHistoryMessage] = Field(...)
+    has_more: bool = Field(...)

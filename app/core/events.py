@@ -1,18 +1,19 @@
 # 用于管理应用的生命周期事件，包括启动事件和关闭事件，以及配置中间件、路由和全局异常处理等
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from app.api.deps import get_db
 from app.api.router import router
 from app.models.base import Base
 from app.seed.default_admin import create_default_admin
+from app.seed.template_project import create_template_project
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .db import engine
-from .websocket import dumb_broadcaster, chatroom_manager, cursor_tracking_broadcaster
+from .websocket import (chatroom_manager, cursor_tracking_broadcaster,
+                        dumb_broadcaster)
 
 
 async def startup_handler() -> None:
@@ -25,6 +26,7 @@ async def startup_handler() -> None:
 
     async for db in get_db():
         await create_default_admin(db)
+        await create_template_project(db)
 
     await dumb_broadcaster.initialize()
     await cursor_tracking_broadcaster.initialize()
@@ -54,10 +56,7 @@ def configure_middleware(app: FastAPI) -> None:
     )
 
     # 可信主机中间件
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["*"]  # 生产环境需要配置具体的允许域名
-    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])  # 生产环境需要配置具体的允许域名
 
 
 def configure_routers(app: FastAPI) -> None:
@@ -82,7 +81,7 @@ def configure_exception_handlers(app: FastAPI) -> None:
                 "code": 500,
                 "data": None,
                 "msg": str(exc) if settings.DEBUG else "Internal Server Error",
-            }
+            },
         )
 
     @app.exception_handler(HTTPException)
@@ -94,7 +93,7 @@ def configure_exception_handlers(app: FastAPI) -> None:
                 "code": exc.status_code,
                 "data": None,
                 "msg": exc.detail,
-            }
+            },
         )
 
     @app.exception_handler(StarletteHTTPException)
@@ -105,5 +104,5 @@ def configure_exception_handlers(app: FastAPI) -> None:
                 "code": exc.status_code,
                 "data": None,
                 "msg": exc.detail,
-            }
+            },
         )

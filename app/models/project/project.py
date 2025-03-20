@@ -2,13 +2,13 @@ import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from app.models.base import Base, BaseDB
 from pydantic import EmailStr
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship
 
-from app.models.base import Base, BaseDB
-
 if TYPE_CHECKING:
+    from app.models.file import File
     from app.models.project.chat import ChatRoom
     from app.models.user import User
 
@@ -41,6 +41,11 @@ class Project(BaseDB, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
     chat_room: "ChatRoom" = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
+    )
+
+    files: list["File"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
