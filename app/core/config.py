@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
     R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
 
+    TEMP_DIR: str = os.getenv("HIVEY_B_TEMP_PATH", "./temp")
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         if self.USE_SQLITE:
