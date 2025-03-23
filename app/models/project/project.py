@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import EmailStr
 from sqlalchemy import UniqueConstraint
@@ -105,6 +106,24 @@ class ProjectCreate(Base):
 
 class ProjectUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
+
+
+class OwnerInfo(Base):
+    username: str = Field(...)
+    email: EmailStr = Field(...)
+
+
+class ProjectInfo(Base):
+    id: uuid.UUID = Field(..., sa_column_kwargs={"index": True})
+    name: str = Field(
+        ...,
+        max_length=255,
+    )
+    type: ProjectType = Field(default=ProjectType.PROJECT)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    members_num: Optional[int] = Field(default=None)
+    owner: Optional["OwnerInfo"] = Field(default=None)
 
 
 class ProjectID(Base):

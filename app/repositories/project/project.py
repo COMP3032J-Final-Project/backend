@@ -72,11 +72,25 @@ class ProjectDAO:
         await db.commit()
 
     @staticmethod
+    async def get_project_owner(
+        project: Project,
+        db: AsyncSession,
+    ) -> Optional[User]:
+        query = select(ProjectUser).where(
+            ProjectUser.project_id == project.id,
+            ProjectUser.permission == ProjectPermission.OWNER,
+        )
+        result = await db.execute(query)
+        project_user = result.scalar_one()
+        user = await db.get(User, project_user.user_id)
+        return user
+
+    @staticmethod
     async def get_project_permission(
         project: Project,
         user: User,
         db: AsyncSession,
-    ) -> Any | None:
+    ) -> Optional[ProjectPermission]:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.user_id == user.id,

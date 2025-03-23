@@ -9,9 +9,9 @@ from app.models.project.project import (
     ProjectCreate,
     ProjectUpdate,
     ProjectID,
-    ProjectPermission,
+    ProjectPermission, ProjectInfo, OwnerInfo,
 )
-from app.models.user import User
+from app.models.user import User, UserInfo
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 
@@ -32,17 +32,28 @@ async def create_project(
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 
-@router.get("/", response_model=APIResponse[List[Project]])
+@router.get("/", response_model=APIResponse[List[ProjectInfo]])
 async def get_projects(
         current_user: Annotated[User, Depends(get_current_user)],
         db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIResponse[List[Project]]:
+) -> APIResponse[List[ProjectInfo]]:
     """获取当前用户的所有项目"""
     projects = await ProjectDAO.get_projects(current_user, db)
-    return APIResponse(code=200, data=projects, msg="success")
+
+    # 补充其他信息
+    projects_info = []
+    for project in projects:
+        project_info = ProjectInfo.model_validate(project)
+        owner = await ProjectDAO.get_project_owner(project, db)
+        owner_info = OwnerInfo.model_validate(owner)
+        members_num = len(await ProjectDAO.get_members(project, db))
+        project_info.owner = owner_info
+        project_info.members_num = members_num
+        projects_info.append(project_info)
+    return APIResponse(code=200, data=projects_info, msg="success")
 
 
-@router.get("/{project_id:uuid}", response_model=APIResponse[Project])
+@router.get("/{project_id:uuid}", response_model=APIResponse[ProjectInfo])
 async def get_project(
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
@@ -52,7 +63,17 @@ async def get_project(
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this project")
-    return APIResponse(code=200, data=current_project, msg="success")
+
+    # 补充其他信息
+    owner = await ProjectDAO.get_project_owner(current_project, db)
+    owner_info = OwnerInfo.model_validate(owner)
+    members_num = len(await ProjectDAO.get_members(current_project, db))
+
+    project_info = ProjectInfo.model_validate(current_project)
+    project_info.owner = owner_info
+    project_info.members_num = members_num
+
+    return APIResponse(code=200, data=project_info, msg="success")
 
 
 @router.put("/{project_id:uuid}", response_model=APIResponse[Project])
