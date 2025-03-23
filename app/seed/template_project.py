@@ -1,8 +1,9 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
-from app.models.project.project import ProjectCreate, ProjectPermission
+from app.models.project.project import ProjectCreate, ProjectPermission, ProjectType
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_template_project(db: AsyncSession) -> None:
@@ -10,7 +11,11 @@ async def create_template_project(db: AsyncSession) -> None:
     if admin_user:
         admins_projects = await ProjectDAO.get_projects(user=admin_user, db=db)
         if not admins_projects:
-            template_project = await ProjectDAO.create_project(project_create=ProjectCreate(name="Templates"), db=db)
+            template_project = await ProjectDAO.create_project(
+                project_create=ProjectCreate(
+                    name="Templates",
+                    type=ProjectType.TEMPLATE),
+                db=db)
             await ProjectDAO.add_member(
                 project=template_project, user=admin_user, permission=ProjectPermission.OWNER, db=db
             )

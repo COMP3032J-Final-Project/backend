@@ -39,6 +39,7 @@ class ProjectDAO:
     ) -> Project:
         project = Project(
             name=project_create.name,
+            type=project_create.type,
         )
         db.add(project)
         await db.commit()

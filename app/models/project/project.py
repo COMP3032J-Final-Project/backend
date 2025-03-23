@@ -2,13 +2,14 @@ import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from app.models.base import Base, BaseDB
 from pydantic import EmailStr
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship
 
+from app.models.base import Base, BaseDB
+
 if TYPE_CHECKING:
-    from app.models.file import File
+    from app.models.project.file import File
     from app.models.project.chat import ChatRoom
     from app.models.user import User
 
@@ -24,6 +25,15 @@ class ProjectPermission(str, Enum):
     OWNER = "owner"
 
 
+class ProjectType(str, Enum):
+    """
+    项目类型枚举
+    """
+
+    PROJECT = "project"
+    TEMPLATE = "template"
+
+
 class Project(BaseDB, table=True):
     """
     项目模型
@@ -35,6 +45,10 @@ class Project(BaseDB, table=True):
         ...,
         max_length=255,
         sa_column_kwargs={"index": True, "nullable": False},
+    )
+    type: ProjectType = Field(
+        default=ProjectType.PROJECT,
+        sa_column_kwargs={"nullable": False},
     )
     users: list["ProjectUser"] = Relationship(
         back_populates="project",
@@ -86,6 +100,7 @@ class ProjectUser(BaseDB, table=True):
 
 class ProjectCreate(Base):
     name: str = Field(..., max_length=255)
+    type: ProjectType = Field(...)
 
 
 class ProjectUpdate(Base):
