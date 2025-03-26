@@ -1,4 +1,5 @@
 .aider*
+/temp
 /pyrightconfig.json
 /hivey.db
 .idea/

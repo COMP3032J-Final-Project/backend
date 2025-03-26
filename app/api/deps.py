@@ -20,6 +20,10 @@ from app.repositories.user import UserDAO
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_STR}/auth/login")
 
 
+class TokenValidationException(Exception):
+    pass
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     数据库会话依赖
@@ -67,33 +71,25 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
     """
     获取当前用户
     """
+    
     try:
         token = websocket.query_params.get("token")
         if not token:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
+            raise TokenValidationException
 
-        # 解码token
-        try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-            token_data = TokenPayload(**payload)
-        except JWTError:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
-
-        try:
-            user_id = uuid.UUID(str(token_data.sub))
-        except ValueError:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
-
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        token_data = TokenPayload(**payload)
+        user_id = uuid.UUID(str(token_data.sub))
         user = await UserDAO.get_user_by_id(user_id, db)
         if not user or not user.is_active:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
+            raise TokenValidationException
         return user
+    except (TokenValidationException, JWTError, ValueError, ):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
     except WebSocketDisconnect:
         logger.info("WebSocket connection closed (expected on invalid token)")
+        raise
 
 
 async def get_target_user(

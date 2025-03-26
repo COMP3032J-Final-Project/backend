@@ -29,27 +29,27 @@ async def cursor(
             await cursor_tracking_broadcaster.send_message(channel, message, fake_user_id)
     except WebSocketDisconnect:
         await cursor_tracking_broadcaster.disconnect(fake_user_id)
-        pass
 
 
 @router.websocket("/crdt")
 async def crdt(
     websocket: WebSocket,
-    project_id = Path(..., description="The ID of the project")
+    current_user: Annotated[User, Depends(get_current_user_ws)],
+    current_project: Annotated[Project, Depends(get_current_project)],
 ):
     await websocket.accept()
-    fake_user_id = str(hash(websocket))
-    await dumb_broadcaster.connect(fake_user_id, websocket)
-    await dumb_broadcaster.subscribe_client_to_channel(fake_user_id, "doc1")
+    channel_name = f"{str(current_project.id)}/doc1"
+    # TODO handle one user many connection situation (just like typst.app)
+    client_id = str(current_user.id)
+    await dumb_broadcaster.connect(client_id, websocket)
+    await dumb_broadcaster.subscribe_client_to_channel(client_id, channel_name)
 
     try:
         while True:
             data = await websocket.receive_text()
-            # await websocket.send_text(f"{fake_user_id}: {data}")
-            await dumb_broadcaster.send_message("doc1", data, fake_user_id)
+            await dumb_broadcaster.send_message(channel_name, data, client_id)
     except WebSocketDisconnect:
-        await dumb_broadcaster.disconnect(fake_user_id)
-        pass
+        await dumb_broadcaster.disconnect(client_id)
 
 
 @router.websocket("/chat")
@@ -76,5 +76,4 @@ async def chat(
             message = await websocket.receive_text()
             await chatroom_manager.send_message(current_channel, message, current_client_id)
     except WebSocketDisconnect:
-        await chatroom_manager.disconnect(current_user.id)
-        pass
+        await chatroom_manager.disconnect(current_client_id)
