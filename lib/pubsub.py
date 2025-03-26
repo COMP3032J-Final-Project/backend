@@ -14,13 +14,11 @@ from typing import Annotated, Any, Dict, List, Optional, Set, Tuple
 
 import orjson
 import redis.asyncio as aioredis
-from app.api.deps import get_db
 from app.core.db import async_session
 from app.models.project.chat import ChatMessageType
 from app.repositories.project.chat import ChatDAO
-from fastapi import Depends, WebSocket
+from fastapi import WebSocket
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger.disable(__name__)
 

@@ -13,7 +13,10 @@ router = APIRouter()
 
 
 @router.websocket("/cursor")
-async def cursor(websocket: WebSocket, project_id: str = Path(..., description="The ID of the project")):
+async def cursor(
+    websocket: WebSocket,
+    project_id = Path(..., description="The ID of the project")
+):
     await websocket.accept()
     channel = f"proj:{project_id}/cursor"
     fake_user_id = str(hash(websocket))
@@ -30,7 +33,10 @@ async def cursor(websocket: WebSocket, project_id: str = Path(..., description="
 
 
 @router.websocket("/crdt")
-async def crdt(websocket: WebSocket, project_id: str = Path(..., description="The ID of the project")):
+async def crdt(
+    websocket: WebSocket,
+    project_id = Path(..., description="The ID of the project")
+):
     await websocket.accept()
     fake_user_id = str(hash(websocket))
     await dumb_broadcaster.connect(fake_user_id, websocket)
