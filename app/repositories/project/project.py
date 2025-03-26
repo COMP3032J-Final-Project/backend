@@ -25,13 +25,9 @@ class ProjectDAO:
         """
         获取当前用户的所有项目
         """
-        user_projects = user.projects
-        projects = []
-        for user_project in user_projects:
-            # FIXME don't do this. It causes N + 1 queries issue
-            project = await db.get(Project, user_project.project_id)
-            projects.append(project)
-        return projects
+        query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id)
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
     async def create_project(
@@ -77,14 +73,12 @@ class ProjectDAO:
         project: Project,
         db: AsyncSession,
     ) -> Optional[User]:
-        query = select(ProjectUser).where(
+        query = select(User).join(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.permission == ProjectPermission.OWNER,
         )
         result = await db.execute(query)
-        project_user = result.scalar_one()
-        user = await db.get(User, project_user.user_id)
-        return user
+        return result.scalar_one_or_none()
 
     @staticmethod
     async def get_project_permission(
@@ -164,12 +158,9 @@ class ProjectDAO:
         project: Project,
         db: AsyncSession,
     ) -> list[Optional[User]]:
-        project_users = project.users
-        members = []
-        for project_user in project_users:
-            user = await db.get(User, project_user.user_id)
-            members.append(user)
-        return members
+        query = select(User).join(ProjectUser).where(ProjectUser.project_id == project.id)
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
     async def add_member(

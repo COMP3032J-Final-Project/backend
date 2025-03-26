@@ -28,7 +28,10 @@ class BaseDB(Base, table=False):
     基础数据库模型类
     """
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column_kwargs={"index": True}
+    )
     updated_at: datetime = Field(
         default_factory=datetime.now,
         sa_column_kwargs={"onupdate": datetime.now}  # 自动更新

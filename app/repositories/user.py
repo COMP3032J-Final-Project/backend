@@ -23,7 +23,7 @@ class UserDAO:
         user = await db.get(User, user_id)
         if not user or not user.is_active:
             return None
-        return await db.get(User, user_id)
+        return user
 
     @staticmethod
     async def get_user_by_email(
