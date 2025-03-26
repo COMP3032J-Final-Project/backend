@@ -8,19 +8,19 @@ To create a new Connection Manager:
 import asyncio
 import time
 import uuid
-from datetime import datetime
-from typing import Dict, Any, Optional, List, Set, Tuple, Annotated
-import orjson
 from abc import ABC, abstractmethod
-from fastapi import WebSocket, Depends
-from loguru import logger
-import redis.asyncio as aioredis
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+from typing import Annotated, Any, Dict, List, Optional, Set, Tuple
 
+import orjson
+import redis.asyncio as aioredis
 from app.api.deps import get_db
 from app.core.db import async_session
 from app.models.project.chat import ChatMessageType
 from app.repositories.project.chat import ChatDAO
+from fastapi import Depends, WebSocket
+from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger.disable(__name__)
 

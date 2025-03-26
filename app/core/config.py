@@ -1,4 +1,5 @@
 # 用于配置FastAPI应用程序的设置
+import logging
 import os
 import secrets
 from typing import List
@@ -6,6 +7,8 @@ from typing import List
 from dotenv import load_dotenv
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger("uvicorn.error")
 
 load_dotenv()
 
@@ -52,7 +55,17 @@ class Settings(BaseSettings):
     R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
     R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
 
-    TEMP_DIR: str = os.getenv("HIVEY_B_TEMP_PATH", "./temp")
+    TEMP_PATH: str = os.path.normpath(os.getenv("HIVEY_B_TEMP_PATH", "./temp"))
+
+    try:
+        os.mkdir(TEMP_PATH)
+        logger.info(f"Directory '{TEMP_PATH}' created successfully.")
+    except FileExistsError:
+        logger.error(f"Directory '{TEMP_PATH}' already exists.")
+    except PermissionError:
+        logger.error(f"Permission denied: Unable to create '{TEMP_PATH}'.")
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
 
     @property
     def sqlalchemy_database_uri(self) -> str:
