@@ -28,6 +28,7 @@ class ProjectDAO:
         user_projects = user.projects
         projects = []
         for user_project in user_projects:
+            # FIXME don't do this. It causes N + 1 queries issue
             project = await db.get(Project, user_project.project_id)
             projects.append(project)
         return projects
