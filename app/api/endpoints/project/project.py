@@ -1,4 +1,5 @@
 from typing import Annotated, List
+import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -9,7 +10,10 @@ from app.models.project.project import (
     ProjectCreate,
     ProjectUpdate,
     ProjectID,
-    ProjectPermission, ProjectInfo, OwnerInfo,
+    ProjectPermission,
+    ProjectInfo,
+    OwnerInfo,
+    ProjectsDelete,
 )
 from app.models.user import User, UserInfo
 from app.repositories.project.chat import ChatDAO
@@ -34,8 +38,8 @@ async def create_project(
 
 @router.get("/", response_model=APIResponse[List[ProjectInfo]])
 async def get_projects(
-        current_user: Annotated[User, Depends(get_current_user)],
-        db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[List[ProjectInfo]]:
     """获取当前用户的所有项目"""
     projects = await ProjectDAO.get_projects(current_user, db)
@@ -86,12 +90,50 @@ async def update_project(
     """更新项目信息"""
     # 检查用户是否为项目管理员或创建者
     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user ,db)
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_admin and not is_owner:
         raise HTTPException(status_code=403, detail="No permission to update this project")
 
     updated_project = await ProjectDAO.update_project(current_project, project_update, db)
     return APIResponse(code=200, data=updated_project, msg="Project updated")
+
+
+@router.delete("/", response_model=APIResponse)
+async def delete_projects(
+    projects_delete: ProjectsDelete,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """删除当前用户某些项目"""
+    project_ids = set(projects_delete.project_ids)
+    invalid_projects = []
+    unauthorized_projects = []
+
+    # 验证项目
+    for project_id in project_ids:
+        project = await ProjectDAO.get_project_by_id(project_id, db)
+        if not project:
+            invalid_projects.append(str(project_id))
+            continue
+        is_owner = await ProjectDAO.is_project_owner(project, current_user, db)
+        if not is_owner:
+            unauthorized_projects.append(str(project_id))
+
+    # 若无效或无权限
+    if invalid_projects or unauthorized_projects:
+        error_messages = []
+        if invalid_projects:
+            error_messages.append(f"Projects not found: {', '.join(invalid_projects)}")
+        if unauthorized_projects:
+            error_messages.append(f"No permission to delete projects: {', '.join(unauthorized_projects)}")
+        raise HTTPException(status_code=400, detail=" | ".join(error_messages))
+
+    # 删除项目
+    for project_id in project_ids:
+        project = await ProjectDAO.get_project_by_id(project_id, db)
+        await ProjectDAO.delete_project(project, db)
+
+    return APIResponse(code=200, msg="Projects deleted")
 
 
 @router.delete("/{project_id:uuid}", response_model=APIResponse)

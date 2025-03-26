@@ -108,6 +108,10 @@ class ProjectUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
 
 
+class ProjectsDelete(Base):
+    project_ids: list[uuid.UUID] = Field(...)
+
+
 class OwnerInfo(Base):
     username: str = Field(...)
     email: EmailStr = Field(...)
