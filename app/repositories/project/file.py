@@ -1,14 +1,17 @@
+import logging
 import os
 import uuid
 from pathlib import PureWindowsPath
 from typing import Any, BinaryIO, List, Optional, Type
 
+import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
 from app.models.project.file import File, FileCreate
 from app.models.project.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel.ext.asyncio.session import AsyncSession
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def force_posix(path: str) -> str:
@@ -52,8 +55,11 @@ class FileDAO:
         """
         flp = FileDAO.get_temp_file_path(file=file)
         fp = FileDAO.get_remote_file_path(file=file)
-        with open(flp, "wb") as f:
-            r2client.download_fileobj(settings.R2_BUCKET, fp, f)
+        try:
+            with open(flp, "wb") as f:
+                r2client.download_fileobj(settings.R2_BUCKET, fp, f)
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
         return f
 
     @staticmethod
@@ -68,7 +74,8 @@ class FileDAO:
         """
         flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
         fp = FileDAO.get_remote_file_path(file=file)
-
-        with open(flp, "rb") as f:
-            r2client.upload_fileobj(f, settings.R2_BUCKET, fp)
-        return
+        try:
+            with open(flp, "rb") as f:
+                r2client.upload_fileobj(f, settings.R2_BUCKET, fp)
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)

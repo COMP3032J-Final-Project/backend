@@ -47,5 +47,4 @@ async def create_template_projects(db: AsyncSession) -> None:
             file = await FileDAO.create_file(
                 file_create=FileCreate(filename=tail, filepath=head), project=template_project, db=db
             )
-            logger.info(f"{FileDAO.get_remote_file_path(file=file)}")
             await FileDAO.push_file_to_r2(file=file, localpath=filepath)

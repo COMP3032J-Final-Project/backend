@@ -8,7 +8,7 @@ from app.models.project.project import Project
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, Path
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 router = APIRouter()
 
@@ -27,7 +27,6 @@ async def get_file(
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-
     file = await FileDAO.get_file_by_id(file_id=file_id, db=db)
     if file:
         binary_file = await FileDAO.pull_file_from_r2(file)
