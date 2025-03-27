@@ -29,6 +29,8 @@ async def update_chat_room(
         return APIResponse(code=403, msg="No permission to update this project")
 
     updated_chat_room = await ChatDAO.update_chat_room(current_project.chat_room, chat_room_update, db)
+    if updated_chat_room is None:
+        return APIResponse(code=400, msg="Failed to update chat room")
     return APIResponse(code=200, data=updated_chat_room, msg="success")
 
 

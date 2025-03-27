@@ -1,12 +1,13 @@
 import uuid
-from typing import Any, List, Optional, Type
+from typing import Optional
+
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.project.file import File
 from app.models.project.project import Project, ProjectCreate, ProjectPermission, ProjectUpdate, ProjectUser
 from app.models.user import User
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 
 class ProjectDAO:
@@ -21,7 +22,7 @@ class ProjectDAO:
     async def get_projects(
         user: User,
         db: AsyncSession,
-    ) -> list[Optional[Project]]:
+    ) -> list[Project]:
         """
         获取当前用户的所有项目
         """
@@ -157,7 +158,7 @@ class ProjectDAO:
     async def get_members(
         project: Project,
         db: AsyncSession,
-    ) -> list[Optional[User]]:
+    ) -> list[User]:
         query = select(User).join(ProjectUser).where(ProjectUser.project_id == project.id)
         result = await db.execute(query)
         return list(result.scalars().all())
@@ -194,17 +195,24 @@ class ProjectDAO:
         user: User,
         permission: ProjectPermission,
         db: AsyncSession,
-    ) -> None:
+    ) -> Optional[ProjectUser]:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.user_id == user.id,
         )
         result = await db.execute(query)
         project_user = result.scalar_one_or_none()
-        assert project_user  # this should never be None.
+        if project_user is None:
+            return None
         project_user.permission = permission
-        await db.commit()
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return None
         await db.refresh(project_user)
+        return project_user
 
     @staticmethod
     async def get_files(project: Project, db: AsyncSession) -> list[File]:

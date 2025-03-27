@@ -170,7 +170,9 @@ async def update_member(
     elif is_current_admin and new_permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission update to admin")
 
-    await ProjectDAO.update_member(current_project, target_user, new_permission, db)
+    updated_member = await ProjectDAO.update_member(current_project, target_user, new_permission, db)
+    if updated_member is None:
+        return APIResponse(code=400, msg="Failed to update member")
     return APIResponse(code=200, msg="Member updated")
 
 
@@ -197,6 +199,8 @@ async def transfer_ownership(
         raise HTTPException(status_code=400, detail="User is not a member of the project")
 
     # 将目标用户的权限设置为所有者
-    await ProjectDAO.update_member(current_project, target_user, ProjectPermission.OWNER, db)
+    updated_member = await ProjectDAO.update_member(current_project, target_user, ProjectPermission.OWNER, db)
+    if updated_member is None:
+        return APIResponse(code=400, msg="Failed to transfer ownership")
     await ProjectDAO.remove_member(current_project, current_user, db)
     return APIResponse(code=200, msg="Ownership transferred")
