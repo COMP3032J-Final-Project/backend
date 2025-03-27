@@ -49,6 +49,11 @@ class FileDAO:
         return file
 
     @staticmethod
+    async def delete_file(file: File, db: AsyncSession) -> None:
+        await db.delete(file)
+        await db.commit()
+
+    @staticmethod
     async def pull_file_from_r2(file: File) -> BinaryIO:
         """
         将远程文件拉到本地，保留原本文件树结构
@@ -71,19 +76,78 @@ class FileDAO:
         # return f
 
     @staticmethod
+    async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
+        """
+        仅用于已经正常上传到远程的文件！
+        """
+        fp = FileDAO.get_remote_file_path(file=file)
+        return await FileDAO.generate_get_obj_link_from_key(key=fp, expiration=expiration)
+
+    @staticmethod
+    async def generate_get_obj_link_from_key(key: str, expiration=3600) -> str:
+        """
+        使用r2 key生成临时链接
+        默认过期时间单位为秒
+        """
+        response = ""
+        try:
+            response = r2client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": settings.R2_BUCKET, "Key": key},
+                ExpiresIn=expiration,
+            )
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+
+        return response
+
+    @staticmethod
     async def push_file_to_r2(file: File, localpath: str = "") -> None:
         """
         上传文件至云端
-        # 使用样例：
-
         使用样例：
             push_file_to_r2(file: File)
-            push_file_to_r2(file: File, localpath: )
+            push_file_to_r2(file: File, localpath:)
+        如果规定localpath则覆写本地路径的取值
         """
         flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
         fp = FileDAO.get_remote_file_path(file=file)
         try:
             with open(flp, "rb") as f:
-                r2client.upload_fileobj(f, settings.R2_BUCKET, fp)
+                r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=fp)
         except botocore.exceptions.ClientError as error:
             logger.error(error)
+
+    @staticmethod
+    async def delete_file_from_r2(file: File) -> None:
+        await FileDAO.delete_key_from_r2(key=FileDAO.get_remote_file_path(file=file))
+
+    @staticmethod
+    async def delete_key_from_r2(key: str = "") -> None:
+        try:
+            r2client.delete_object(Bucket=settings.R2_BUCKET, Key=key)
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+
+    @staticmethod
+    async def list_r2_keys(prefix: str = os.path.normpath("./"), maxkeys=100) -> List[str]:
+        """
+        R2 key = 远程文件夹+远程文件名
+        """
+        try:
+            # this handles the more generic batched case.
+            response = r2client.list_objects_v2(Bucket=settings.R2_BUCKET, Prefix=prefix, MaxKeys=maxkeys)
+            contents = response["Contents"]
+            while "NextContinuationToken" in response:
+                continuation_token = response["NextContinuationToken"]
+                response = r2client.list_objects_v2(
+                    Bucket="hivey-files", Prefix="simple_article", MaxKeys=maxkeys, ContinuationToken=continuation_token
+                )
+                contents.extend(response["Contents"])
+
+            return list(content["Key"] for content in contents)
+
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+
+        return []

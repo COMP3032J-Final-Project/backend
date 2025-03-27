@@ -6,6 +6,7 @@ from app.models.project.project import (Project, ProjectCreate,
                                         ProjectPermission, ProjectUpdate,
                                         ProjectUser)
 from app.models.user import User
+from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
