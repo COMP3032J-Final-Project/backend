@@ -47,12 +47,7 @@ async def crdt(
 
     try:
         while True:
-            data = await websocket.receive()
-            websocket._raise_on_disconnect(data)
-            try:
-                message = typing.cast(str, data["text"])
-            except KeyError:
-                message = typing.cast(str, data["bytes"])
+            message = websocket.receive_text()
             await dumb_broadcaster.send_message(channel_name, message, client_id)
     except WebSocketDisconnect:
         await dumb_broadcaster.disconnect(client_id)
