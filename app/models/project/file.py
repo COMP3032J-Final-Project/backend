@@ -1,9 +1,9 @@
 import uuid
-from enum import Enum
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
+
+from sqlmodel import Field, Relationship
 
 from app.models.base import Base, BaseDB
-from sqlmodel import Field, Relationship
 
 if TYPE_CHECKING:
     from .project import Project

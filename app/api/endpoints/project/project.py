@@ -1,5 +1,4 @@
 from typing import Annotated, List
-import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -8,6 +7,7 @@ from app.models.base import APIResponse
 from app.models.project.project import (
     Project,
     ProjectCreate,
+    ProjectType,
     ProjectUpdate,
     ProjectID,
     ProjectPermission,
@@ -33,6 +33,12 @@ async def create_project(
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
     # 创建聊天室
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
+
+    # 若type为template，复制模板(未完成)
+    if project_create.type == ProjectType.TEMPLATE:
+        template_project = await ProjectDAO.get_project_by_name("simple article", db)
+        await ProjectDAO.copy_template(template_project, new_project, db)
+
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 

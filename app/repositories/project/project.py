@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from app.models.project.file import File
+from app.models.project.file import File, FileCreate
 from app.models.project.project import (Project, ProjectCreate,
                                         ProjectPermission, ProjectUpdate,
                                         ProjectUser)
@@ -9,6 +9,8 @@ from app.models.user import User
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.repositories.project.file import FileDAO
 
 
 class ProjectDAO:
@@ -18,6 +20,16 @@ class ProjectDAO:
         db: AsyncSession,
     ) -> Optional[Project]:
         return await db.get(Project, project_id)
+    
+    @staticmethod
+    async def get_project_by_name(
+        project_name: str,
+        db: AsyncSession,
+    ) -> Optional[Project]:
+        """临时DAO demo用完即焚"""
+        query = select(Project).where(Project.name == project_name)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
 
     @staticmethod
     async def get_projects(
@@ -223,3 +235,26 @@ class ProjectDAO:
     async def get_files(project: Project, db: AsyncSession) -> list[File]:
         project_files = project.files
         return project_files
+
+    @staticmethod
+    async def copy_template(
+        template_project: Project,
+        new_project: Project,
+        db: AsyncSession,
+    ) -> None:
+        """
+        复制模板项目的文件到新项目(未完成)
+        """
+        template_files = await ProjectDAO.get_files(template_project, db)
+        
+        # 复制文件
+        for template_file in template_files:
+            new_file = await FileDAO.create_file(
+                file_create=FileCreate(
+                    filename=template_file.filename,
+                    filepath=template_file.filepath,
+                ),
+                project=new_project,
+                db=db,
+            )
+            # await FileDAO.push_file_to_r2(file=new_file, localpath=template_file.filepath)
