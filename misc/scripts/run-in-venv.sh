@@ -11,6 +11,8 @@ if [[ -d ./.venv ]]; then
     rm -rf ./.venv
 fi
 
+python3 -m venv .venv
+
 . .venv/bin/activate
 
 echo "Updating/Install dependencies..."
