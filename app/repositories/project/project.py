@@ -2,9 +2,12 @@ import uuid
 from typing import Any, List, Optional, Type
 
 from app.models.project.file import File
-from app.models.project.project import Project, ProjectCreate, ProjectPermission, ProjectUpdate, ProjectUser
+from app.models.project.project import (Project, ProjectCreate,
+                                        ProjectPermission, ProjectUpdate,
+                                        ProjectUser)
 from app.models.user import User
 from sqlalchemy.exc import IntegrityError
+# from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -21,7 +24,7 @@ class ProjectDAO:
     async def get_projects(
         user: User,
         db: AsyncSession,
-    ) -> list[Optional[Project]]:
+    ) -> list[Project]:
         """
         获取当前用户的所有项目
         """
@@ -73,9 +76,13 @@ class ProjectDAO:
         project: Project,
         db: AsyncSession,
     ) -> Optional[User]:
-        query = select(User).join(ProjectUser).where(
-            ProjectUser.project_id == project.id,
-            ProjectUser.permission == ProjectPermission.OWNER,
+        query = (
+            select(User)
+            .join(ProjectUser)
+            .where(
+                ProjectUser.project_id == project.id,
+                ProjectUser.permission == ProjectPermission.OWNER,
+            )
         )
         result = await db.execute(query)
         return result.scalar_one_or_none()
@@ -157,7 +164,7 @@ class ProjectDAO:
     async def get_members(
         project: Project,
         db: AsyncSession,
-    ) -> list[Optional[User]]:
+    ) -> list[User]:
         query = select(User).join(ProjectUser).where(ProjectUser.project_id == project.id)
         result = await db.execute(query)
         return list(result.scalars().all())

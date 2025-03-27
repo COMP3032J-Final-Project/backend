@@ -3,7 +3,7 @@ from app.api.deps import get_db
 from app.api.router import router
 from app.models.base import Base
 from app.seed.default_admin import create_default_admin
-from app.seed.template_project import create_template_project
+from app.seed.template_project import create_template_projects
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -26,7 +26,7 @@ async def startup_handler() -> None:
 
     async for db in get_db():
         await create_default_admin(db)
-        await create_template_project(db)
+        await create_template_projects(db)
 
     await dumb_broadcaster.initialize()
     await cursor_tracking_broadcaster.initialize()

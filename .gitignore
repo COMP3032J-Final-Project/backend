@@ -174,3 +174,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Sublime editor stuff
+*.sublime-project
+*.sublime-workspace
+# temporary test file
+test.py
