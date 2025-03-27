@@ -6,9 +6,9 @@ project_dir="/var/www/hivey/backend/"
 
 cd "$project_dir"
 
-if [[ ! -d ./.venv ]]; then
-    echo "Virtual environment doesn't exist. Creating one..."
-    python3 -m venv .venv
+if [[ -d ./.venv ]]; then
+    # since `rsync --delete` will empty most of the stuffs inside .venv (not not all)
+    rm -rf ./.venv
 fi
 
 . .venv/bin/activate
