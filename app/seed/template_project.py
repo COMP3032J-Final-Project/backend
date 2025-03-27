@@ -21,15 +21,16 @@ async def create_template_projects(db: AsyncSession) -> None:
         raise ValueError("Admin user cannot be located to attach template project to")
 
     admins_projects = await ProjectDAO.get_projects(user=admin_user, db=db)
-    if admins_projects:
-        for project in admins_projects:
-            # remove all projects associated with the administrator.
-            await ProjectDAO.delete_project(project=project, db=db)
 
     for folder in os.scandir(os.path.normpath("./templates")):
         # initialize projects based on existing file structure
 
         project_name = folder.name.replace("_", " ")
+
+        for project in admins_projects:
+            if project.name == project_name:
+                await ProjectDAO.delete_project(project=project, db=db)
+
         filepaths = glob.glob(os.path.normpath(os.path.join(folder.path, "**.**")), recursive=True)
         relpaths = [
             os.path.normpath(os.path.relpath(filepath, os.path.normpath("./templates"))) for filepath in filepaths
