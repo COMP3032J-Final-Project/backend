@@ -19,6 +19,7 @@ from app.models.project.chat import ChatMessageType
 from app.repositories.project.chat import ChatDAO
 from fastapi import WebSocket
 from loguru import logger
+import base64
 
 logger.disable(__name__)
 
@@ -224,14 +225,15 @@ class RedisPubSubManager(PubSubInterface):
                 logger.debug(f"Received Redis PubSub message for topic {topic}: {message}")
 
                 # Only process message types (skip subscribe/unsubscribe messages)
-                if message["type"] == "message":
+                message_type = message["type"]
+                if message_type == "message":
                     # This is an actual message published by another client
                     await queue.put(message)
-                elif message["type"] == "error":
+                elif message_type == "error":
                     logger.error(f"Error in Redis PubSub for topic {topic}: {message.get('data')}")
                 else:
                     # Skip Redis protocol messages like 'subscribe' confirmations
-                    logger.debug(f"Skipping Redis protocol message type: {message['type']}")
+                    logger.debug(f"Skipping Redis protocol message type: {message_type}")
 
         except asyncio.CancelledError:
             logger.debug(f"Redis PubSub listener for topic {topic} cancelled")
@@ -531,14 +533,15 @@ class WebsocketConnManager(ABC):
         try:
             while True:
                 message = await subscriber.get()
+                message_type = message["type"]
                 logger.debug(f"Channel {channel} received message: {message}")
 
                 # Skip errors and other non-message types
-                if message.get("type") == "error":
+                if message_type == "error":
                     logger.error(f"Error in PubSub for channel {channel}: {message.get('data')}")
                     continue
-                elif message.get("type") != "message":
-                    logger.debug(f"Skipping non-message type in channel listener: {message.get('type')}")
+                elif message_type != "message":
+                    logger.debug(f"Skipping non-message type in channel listener: {message_type}")
                     continue
 
                 # Process the message
@@ -566,7 +569,10 @@ class WebsocketConnManager(ABC):
         return len(self.client_message_counts[client_id]) <= self.rate_limit
 
     async def send_message(self, channel: str, message: Any, client_id: str):
-        """Handle a message from a client with rate limiting"""
+        """
+        Handle a message from a client with rate limiting
+        Note you you sent in `bytes` type, then the bytes is encoded using base64
+        """
         if channel not in self.client_channels[client_id]:
             raise Exception(f"Client {client_id} is not in channel {channel}!")
 
@@ -593,6 +599,9 @@ class WebsocketConnManager(ABC):
                         },
                     )
                 return
+
+        if isinstance(message, bytes):
+            message = base64.b64encode(message).decode()
 
         data_to_publish = orjson.dumps({"action": "send_message", "message": message, "client_id": client_id})
 
@@ -723,35 +732,28 @@ class DumbBroadcaster(WebsocketConnManager):
     """Simple broadcaster that forwards messages to all subscribed clients"""
 
     async def _process_pubsub_message(self, channel: str, message: Any):
-        # Get message data once
-        message_data = message["data"]
-
-        # Parse JSON only once if it's a string
-        if isinstance(message_data, str):
-            try:
-                parsed_message = orjson.loads(message_data)
-            except orjson.JSONDecodeError:
-                logger.warning(f"Failed to parse message as JSON: {message_data[:100]}")
-                return
-        else:
-            parsed_message = message_data
-
-        # Parse nested message if needed
-        nested_message = parsed_message.get("message", None)
-        if isinstance(nested_message, str):
-            try:
-                parsed_message["message"] = orjson.loads(nested_message)
-            except orjson.JSONDecodeError:
-                # user may send plain text
-                pass
-
         # Get clients subscribed to this channel
         client_ids = [cid for cid, channels in self.client_channels.items() if channel in channels]
-
         if not client_ids:
             return
 
-        serialized_message = orjson.dumps(parsed_message)
+        message = message["data"]
+        
+        try:
+            message = orjson.loads(message)
+        except orjson.JSONDecodeError:
+            logger.warning(f"Failed to parse message as JSON: {message[:100]}")
+            return
+
+        nested_message = message.get("message", None)
+        if isinstance(nested_message, str):
+            try:
+                message["message"] = orjson.loads(nested_message)
+            except orjson.JSONDecodeError:
+                # possibly base64 encoded bytes or plain text
+                pass
+
+        serialized_message = orjson.dumps(message)
 
         # Send to all subscribed clients
         send_tasks = []
@@ -759,11 +761,10 @@ class DumbBroadcaster(WebsocketConnManager):
             if cid in self.active_connections:
                 websocket = self.active_connections[cid]
                 if hasattr(self, "batch_size") and self.batch_size > 1:
-                    await self.add_message_to_batch(cid, parsed_message)
+                    await self.add_message_to_batch(cid, message)
                 else:
                     send_tasks.append(websocket.send_text(serialized_message.decode()))
 
-        # Wait for all sends to complete if not batching
         if send_tasks:
             await asyncio.gather(*send_tasks)
 

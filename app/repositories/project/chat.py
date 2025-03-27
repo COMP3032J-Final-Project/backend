@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models.project.chat import ChatMessage, ChatRoom, ChatMessageType, ChatRoomUpdate
-from app.models.user import User
 
 
 class ChatDAO:

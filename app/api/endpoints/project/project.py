@@ -95,6 +95,8 @@ async def update_project(
         raise HTTPException(status_code=403, detail="No permission to update this project")
 
     updated_project = await ProjectDAO.update_project(current_project, project_update, db)
+    if updated_project is None:
+        raise HTTPException(status_code=400, detail="Failed to update project")
     return APIResponse(code=200, data=updated_project, msg="Project updated")
 
 

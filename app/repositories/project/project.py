@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, List, Optional, Type
+from typing import Optional
 
 from app.models.project.file import File
 from app.models.project.project import (Project, ProjectCreate,
@@ -7,7 +7,6 @@ from app.models.project.project import (Project, ProjectCreate,
                                         ProjectUser)
 from app.models.user import User
 from sqlalchemy.exc import IntegrityError
-# from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -201,17 +200,24 @@ class ProjectDAO:
         user: User,
         permission: ProjectPermission,
         db: AsyncSession,
-    ) -> None:
+    ) -> Optional[ProjectUser]:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.user_id == user.id,
         )
         result = await db.execute(query)
         project_user = result.scalar_one_or_none()
-        assert project_user  # this should never be None.
+        if project_user is None:
+            return None
         project_user.permission = permission
-        await db.commit()
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return None
         await db.refresh(project_user)
+        return project_user
 
     @staticmethod
     async def get_files(project: Project, db: AsyncSession) -> list[File]:

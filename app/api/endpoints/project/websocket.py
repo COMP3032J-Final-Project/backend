@@ -8,6 +8,7 @@ from app.core.websocket import dumb_broadcaster, cursor_tracking_broadcaster, ch
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
+import typing
 
 router = APIRouter()
 
@@ -46,8 +47,15 @@ async def crdt(
 
     try:
         while True:
-            data = await websocket.receive_text()
-            await dumb_broadcaster.send_message(channel_name, data, client_id)
+            data = await websocket.receive()
+            websocket._raise_on_disconnect(data)
+            try:
+                message = typing.cast(str, data["text"])
+            except KeyError:
+                message = typing.cast(str, data["bytes"])
+
+            print("receive:", message)
+            await dumb_broadcaster.send_message(channel_name, message, client_id)
     except WebSocketDisconnect:
         await dumb_broadcaster.disconnect(client_id)
 
