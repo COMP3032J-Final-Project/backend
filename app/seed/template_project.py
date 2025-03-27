@@ -60,5 +60,5 @@ async def create_template_projects(db: AsyncSession) -> None:
                 file_create=FileCreate(filename=tail, filepath=head), project=template_project, db=db
             )
 
-            logger.info(await FileDAO.generate_get_obj_link_for_file(file=file))
+            # logger.info(await FileDAO.generate_get_obj_link_for_file(file=file))
             await FileDAO.push_file_to_r2(file=file, localpath=filepath)

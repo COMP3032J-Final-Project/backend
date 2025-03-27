@@ -134,20 +134,25 @@ class FileDAO:
         """
         R2 key = 远程文件夹+远程文件名
         """
+        contents: List[str] = []
         try:
             # this handles the more generic batched case.
             response = r2client.list_objects_v2(Bucket=settings.R2_BUCKET, Prefix=prefix, MaxKeys=maxkeys)
-            contents = response["Contents"]
+            contents.extend(content["Key"] for content in response["Contents"])
             while "NextContinuationToken" in response:
                 continuation_token = response["NextContinuationToken"]
                 response = r2client.list_objects_v2(
                     Bucket="hivey-files", Prefix="simple_article", MaxKeys=maxkeys, ContinuationToken=continuation_token
                 )
-                contents.extend(response["Contents"])
+                contents.extend(content["Key"] for content in response["Contents"])
 
-            return list(content["Key"] for content in contents)
-
-        except botocore.exceptions.ClientError as error:
+        except (botocore.exceptions.ClientError, KeyError) as error:
             logger.error(error)
 
-        return []
+        return contents
+
+
+"""
+{'ResponseMetadata': {'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Thu, 27 Mar 2025 16:09:15 GMT', 'content-type': 'application/xml', 'content-length': '284', 'connection': 'keep-alive', 'vary': 'Accept-Encoding', 'server': 'cloudflare', 'cf-ray': '927026b0af950e3d-AMS'}, 'RetryAttempts': 0}, 'IsTruncated': False, 'Name': 'hivey-files', 'Prefix': 'simple_article', 'MaxKeys': 1, 'EncodingType': 'url', 'KeyCount': 0}
+
+"""
