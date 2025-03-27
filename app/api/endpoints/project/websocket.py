@@ -47,8 +47,8 @@ async def crdt(
 
     try:
         while True:
-            message = websocket.receive_text()
-            await dumb_broadcaster.send_message(channel_name, message, client_id)
+            data = await websocket.receive_text()
+            await dumb_broadcaster.send_message(channel_name, data, client_id)
     except WebSocketDisconnect:
         await dumb_broadcaster.disconnect(client_id)
 
