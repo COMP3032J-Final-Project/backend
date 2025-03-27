@@ -21,6 +21,8 @@ from fastapi import WebSocket
 from loguru import logger
 import base64
 
+from app.repositories.user import UserDAO
+
 logger.disable(__name__)
 
 
@@ -642,6 +644,10 @@ class ChatRoomManager(WebsocketConnManager):
             client_id = message.get("client_id")
             timestamp = datetime.now()
 
+            user_info = await self._get_user_info(client_id)
+            if not user_info:
+                return
+
             # TODO 添加其他消息类型
             # TODO add a chat bot
             # 文本消息
@@ -653,10 +659,9 @@ class ChatRoomManager(WebsocketConnManager):
                         await websocket.send_json(
                             {
                                 "message_type": "text",
-                                "room_id": channel,
-                                "sender_id": client_id,
                                 "content": content,
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                                "user": user_info
                             }
                         )
                 logger.info(f"Forwarded chat message from {client_id} to all clients in channel {channel}")
@@ -670,10 +675,9 @@ class ChatRoomManager(WebsocketConnManager):
                         await websocket.send_json(
                             {
                                 "message_type": "join",
-                                "room_id": channel,
-                                "sender_id": client_id,
                                 "content": "Welcome to the chat!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                                "user": user_info
                             }
                         )
                 logger.info(f"Notified clients about {client_id} joining channel {channel}")
@@ -685,10 +689,9 @@ class ChatRoomManager(WebsocketConnManager):
                         await websocket.send_json(
                             {
                                 "message_type": "leave",
-                                "room_id": channel,
-                                "sender_id": client_id,
                                 "content": "Goodbye!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                                "user": user_info
                             }
                         )
                 logger.info(f"Notified clients about {client_id} leaving channel {channel}")
@@ -696,6 +699,23 @@ class ChatRoomManager(WebsocketConnManager):
         except Exception as e:
             logger.error(f"Error processing pubsub message: {e}")
             raise
+
+    async def _get_user_info(self, client_id: str) -> Optional[Dict[str, str]]:
+        try:
+            async with async_session() as db:
+                user = await UserDAO.get_user_by_id(client_id, db)
+                if not user:
+                    logger.error(f"User not found: {client_id}")
+                    return None
+                return {
+                    "id": client_id,
+                    "username": user.username,
+                    "email": user.email,
+                }
+        except Exception as e:
+            logger.error(f"Error getting user info: {e}")
+            return None
+
 
     async def _store_message(
         self,

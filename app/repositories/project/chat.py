@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional, Tuple, Sequence
+from typing import Optional, Sequence
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession

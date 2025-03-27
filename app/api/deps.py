@@ -73,7 +73,7 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
     """
     
     try:
-        token = websocket.query_params.get("token")
+        token = websocket.query_params.get("access_token")
         if not token:
             raise TokenValidationException
 

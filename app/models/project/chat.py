@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Dict
 
 from sqlmodel import Field, Relationship
 
@@ -126,6 +126,10 @@ class ChatHistoryMessage(Base):
         sa_column_kwargs={"nullable": False},
     )
     timestamp: datetime = Field(
+        ...,
+        sa_column_kwargs={"nullable": False},
+    )
+    user: Dict[str, str] = Field(
         ...,
         sa_column_kwargs={"nullable": False},
     )

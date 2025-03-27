@@ -63,10 +63,13 @@ async def get_chat_history(
     for message in messages:
         chat_message_history = ChatHistoryMessage(
             message_type=message.message_type,
-            room_id=message.room_id,
-            sender_id=message.sender_id,
             content=message.content,
             timestamp=message.created_at,
+            user={
+                "id": str(message.sender_id),
+                "username": message.sender.username,
+                "email": message.sender.email,
+            }
         )
         history_messages.append(chat_message_history)
 
