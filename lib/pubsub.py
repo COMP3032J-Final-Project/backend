@@ -338,7 +338,7 @@ class WebsocketConnManager(ABC):
         self,
         url: Optional[str] = None,
         batch_size: int = 10,
-        batch_interval: float = 0.1,
+        batch_interval: float = 0.1,  # 10 fps
         rate_limit: Optional[int] = None,
         rate_period: float = 60.0,
     ):
@@ -731,6 +731,9 @@ class ChatRoomManager(WebsocketConnManager):
 class DumbBroadcaster(WebsocketConnManager):
     """Simple broadcaster that forwards messages to all subscribed clients"""
 
+    def __init__(self, url, batch_interval: float = 0.04, **kwargs):  # 25 fps
+        super().__init__(url, batch_interval=batch_interval, **kwargs)
+        
     async def _process_pubsub_message(self, channel: str, message: Any):
         # Get clients subscribed to this channel
         client_ids = [cid for cid, channels in self.client_channels.items() if channel in channels]

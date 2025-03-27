@@ -41,7 +41,7 @@ async def crdt(
     await websocket.accept()
     channel_name = f"{str(current_project.id)}/doc1"
     # TODO handle one user many connection situation (just like typst.app)
-    client_id = str(current_user.id)
+    client_id = str(current_user.username)
     await dumb_broadcaster.connect(client_id, websocket)
     await dumb_broadcaster.subscribe_client_to_channel(client_id, channel_name)
 
@@ -53,8 +53,6 @@ async def crdt(
                 message = typing.cast(str, data["text"])
             except KeyError:
                 message = typing.cast(str, data["bytes"])
-
-            print("receive:", message)
             await dumb_broadcaster.send_message(channel_name, message, client_id)
     except WebSocketDisconnect:
         await dumb_broadcaster.disconnect(client_id)
