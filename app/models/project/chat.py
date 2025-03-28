@@ -117,14 +117,6 @@ class ChatHistoryMessage(Base):
         max_length=1000,
         sa_column_kwargs={"nullable": False},
     )
-    room_id: uuid.UUID = Field(
-        ...,
-        sa_column_kwargs={"nullable": False},
-    )
-    sender_id: uuid.UUID = Field(
-        ...,
-        sa_column_kwargs={"nullable": False},
-    )
     timestamp: datetime = Field(
         ...,
         sa_column_kwargs={"nullable": False},
@@ -139,4 +131,3 @@ class ChatHistoryResponse(Base):
     """历史记录响应模型"""
 
     messages: List[ChatHistoryMessage] = Field(...)
-    has_more: bool = Field(...)
