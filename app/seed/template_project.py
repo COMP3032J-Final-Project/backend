@@ -3,7 +3,7 @@ import logging
 import os
 
 from app.core.config import settings
-from app.models.project.file import FileCreate
+from app.models.project.file import FileCreate, FileType
 from app.models.project.project import (ProjectCreate, ProjectPermission,
                                         ProjectType)
 from app.repositories.project.chat import ChatDAO
@@ -58,7 +58,7 @@ async def create_template_projects(db: AsyncSession) -> None:
         for filepath, relpath in zip(filepaths, relpaths):
             head, tail = os.path.split(relpath)
             file = await FileDAO.create_file(
-                file_create=FileCreate(filename=tail, filepath=head), project=template_project, db=db
+                file_create=FileCreate(filename=tail, filepath=head, filetype=FileType.FILE), project=template_project, db=db
             )
 
             # logger.info(await FileDAO.generate_get_obj_link_for_file(file=file))

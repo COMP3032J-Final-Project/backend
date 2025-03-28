@@ -254,6 +254,7 @@ class ProjectDAO:
                 file_create=FileCreate(
                     filename=template_file.filename,
                     filepath=template_file.filepath,
+                    filetype=template_file.filetype,
                 ),
                 project=new_project,
                 db=db,

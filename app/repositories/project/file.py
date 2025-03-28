@@ -42,7 +42,7 @@ class FileDAO:
 
     @staticmethod
     async def create_file(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
-        file = File(filename=file_create.filename, filepath=force_posix(file_create.filepath), project_id=project.id)
+        file = File(filename=file_create.filename, filepath=force_posix(file_create.filepath), filetype=file_create.filetype, project_id=project.id)
         db.add(file)
         await db.commit()
         await db.refresh(file)
