@@ -75,6 +75,8 @@ async def get_chat_history(
 
     response_data = ChatHistoryResponse(
         messages=history_messages,
-        has_more=has_more,
     )
-    return APIResponse(code=200, data=response_data, msg="success")
+    if has_more:
+        return APIResponse(code=200, data=response_data, msg="success")
+    else:
+        return APIResponse(code=201, data=response_data, msg="no more messages")
