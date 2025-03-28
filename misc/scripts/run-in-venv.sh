@@ -21,6 +21,7 @@ pip3 install -r ./requirements_full.txt
 echo "Starting Service..."
 CPU_CORES=$(nproc)
 WORKERS=$((2 * CPU_CORES + 1))
-fastapi run --workers $WORKERS ./app
+# FIXME temporarily we cannot run with workers > 1
+fastapi run --workers 1 ./app
 
 
