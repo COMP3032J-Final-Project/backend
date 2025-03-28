@@ -2,20 +2,16 @@ import uuid
 from datetime import datetime
 from typing import Optional, Sequence
 
+from app.models.project.chat import (ChatMessage, ChatMessageType, ChatRoom,
+                                     ChatRoomUpdate)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.models.project.chat import ChatMessage, ChatRoom, ChatMessageType, ChatRoomUpdate
-
 
 class ChatDAO:
     @staticmethod
-    async def create_chat_room(
-        name: str,
-        project_id: uuid.UUID,
-        db: AsyncSession,
-    ) -> ChatRoom:
+    async def create_chat_room(name: str, project_id: uuid.UUID, db: AsyncSession) -> ChatRoom:
         """
         创建聊天室
         """

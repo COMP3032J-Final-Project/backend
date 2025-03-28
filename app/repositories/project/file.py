@@ -53,27 +53,28 @@ class FileDAO:
         await db.delete(file)
         await db.commit()
 
-    @staticmethod
-    async def pull_file_from_r2(file: File) -> BinaryIO:
-        """
-        将远程文件拉到本地，保留原本文件树结构
-        """
-        # TODO 暂时从本地 templates 文件夹读取文件
-        try:
-            file_path = os.path.join("./templates", file.filepath, file.filename)
-            return open(file_path, "rb")
-        except Exception as error:
-            logger.error(f"Error reading file from local: {error}")
-            return None
+    # @staticmethod
+    # async def pull_file_from_r2(file: File) -> BinaryIO:
+    #     """
+    #     将远程文件拉到本地，保留原本文件树结构
+    #     """
 
-        # flp = FileDAO.get_temp_file_path(file=file)
-        # fp = FileDAO.get_remote_file_path(file=file)
-        # try:
-        #     with open(flp, "wb") as f:
-        #         r2client.download_fileobj(settings.R2_BUCKET, fp, f)
-        # except botocore.exceptions.ClientError as error:
-        #     logger.error(error)
-        # return f
+    # # TODO 暂时从本地 templates 文件夹读取文件
+    # try:
+    #     file_path = os.path.join("./templates", file.filepath, file.filename)
+    #     return open(file_path, "rb")
+    # except Exception as error:
+    #     logger.error(f"Error reading file from local: {error}")
+    #     return None
+
+    # flp = FileDAO.get_temp_file_path(file=file)
+    # fp = FileDAO.get_remote_file_path(file=file)
+    # try:
+    #     with open(flp, "wb") as f:
+    #         r2client.download_fileobj(settings.R2_BUCKET, fp, f)
+    # except botocore.exceptions.ClientError as error:
+    #     logger.error(error)
+    # return f
 
     @staticmethod
     async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:

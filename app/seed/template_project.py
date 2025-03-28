@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.models.project.file import FileCreate
 from app.models.project.project import (ProjectCreate, ProjectPermission,
                                         ProjectType)
+from app.repositories.project.chat import ChatDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
@@ -32,12 +33,12 @@ async def create_template_projects(db: AsyncSession) -> None:
                 template_project = project
                 break
         else:
-            template_project = await ProjectDAO.create_project(
-                project_create=ProjectCreate(name=project_name, type=ProjectType.TEMPLATE), db=db
-            )
+            pc = ProjectCreate(name=project_name, type=ProjectType.TEMPLATE)
+            template_project = await ProjectDAO.create_project(project_create=pc, db=db)
             await ProjectDAO.add_member(
                 project=template_project, user=admin_user, permission=ProjectPermission.OWNER, db=db
             )
+            await ChatDAO.create_chat_room(name=pc.name, project_id=template_project.id, db=db)
 
         # delete file currently associated with the Project instance.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
