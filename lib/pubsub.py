@@ -23,7 +23,7 @@ import base64
 
 from app.repositories.user import UserDAO
 
-logger.disable(__name__)
+# logger.disable(__name__)
 
 
 async def websocket_send_json(websocket: WebSocket, message: Dict):
@@ -644,7 +644,8 @@ class ChatRoomManager(WebsocketConnManager):
             client_id = message.get("client_id")
             timestamp = datetime.now()
 
-            user_info = await self._get_user_info(client_id)
+            user_info = await self._get_user_info(uuid.UUID(client_id))
+            print(user_info)
             if not user_info:
                 return
 
@@ -661,7 +662,7 @@ class ChatRoomManager(WebsocketConnManager):
                                 "message_type": "text",
                                 "content": content,
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info
+                                "user": user_info,
                             }
                         )
                 logger.info(f"Forwarded chat message from {client_id} to all clients in channel {channel}")
@@ -677,7 +678,7 @@ class ChatRoomManager(WebsocketConnManager):
                                 "message_type": "join",
                                 "content": "Welcome to the chat!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info
+                                "user": user_info,
                             }
                         )
                 logger.info(f"Notified clients about {client_id} joining channel {channel}")
@@ -691,7 +692,7 @@ class ChatRoomManager(WebsocketConnManager):
                                 "message_type": "leave",
                                 "content": "Goodbye!",
                                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info
+                                "user": user_info,
                             }
                         )
                 logger.info(f"Notified clients about {client_id} leaving channel {channel}")
@@ -700,7 +701,7 @@ class ChatRoomManager(WebsocketConnManager):
             logger.error(f"Error processing pubsub message: {e}")
             raise
 
-    async def _get_user_info(self, client_id: str) -> Optional[Dict[str, str]]:
+    async def _get_user_info(self, client_id: uuid.UUID) -> Optional[Dict[str, str]]:
         try:
             async with async_session() as db:
                 user = await UserDAO.get_user_by_id(client_id, db)
@@ -708,14 +709,13 @@ class ChatRoomManager(WebsocketConnManager):
                     logger.error(f"User not found: {client_id}")
                     return None
                 return {
-                    "id": client_id,
+                    "id": str(client_id),
                     "username": user.username,
                     "email": user.email,
                 }
         except Exception as e:
             logger.error(f"Error getting user info: {e}")
             return None
-
 
     async def _store_message(
         self,
@@ -753,7 +753,7 @@ class DumbBroadcaster(WebsocketConnManager):
 
     def __init__(self, url, batch_interval: float = 0.04, **kwargs):  # 25 fps
         super().__init__(url, batch_interval=batch_interval, **kwargs)
-        
+
     async def _process_pubsub_message(self, channel: str, message: Any):
         # Get clients subscribed to this channel
         client_ids = [cid for cid, channels in self.client_channels.items() if channel in channels]
@@ -761,7 +761,7 @@ class DumbBroadcaster(WebsocketConnManager):
             return
 
         message = message["data"]
-        
+
         try:
             message = orjson.loads(message)
         except orjson.JSONDecodeError:

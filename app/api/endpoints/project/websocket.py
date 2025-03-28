@@ -14,10 +14,7 @@ router = APIRouter()
 
 
 @router.websocket("/cursor")
-async def cursor(
-    websocket: WebSocket,
-    project_id = Path(..., description="The ID of the project")
-):
+async def cursor(websocket: WebSocket, project_id=Path(..., description="The ID of the project")):
     await websocket.accept()
     channel = f"proj:{project_id}/cursor"
     fake_user_id = str(hash(websocket))
@@ -59,7 +56,6 @@ async def chat(
     current_user: Annotated[User, Depends(get_current_user_ws)],
     current_project: Annotated[Project, Depends(get_current_project)],
 ):
-
     try:
         current_chat_room = current_project.chat_room
         current_channel = str(current_chat_room.id)
