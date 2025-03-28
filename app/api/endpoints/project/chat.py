@@ -11,6 +11,7 @@ from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
+from app.repositories.user import UserDAO
 
 router = APIRouter()
 
@@ -61,14 +62,15 @@ async def get_chat_history(
     messages, has_more = await ChatDAO.get_history_messages(current_chat_room, max_num, db, last_timestamp)
     history_messages = []
     for message in messages:
+        user = await UserDAO.get_user_by_id(message.sender_id, db)
         chat_message_history = ChatHistoryMessage(
             message_type=message.message_type,
             content=message.content,
             timestamp=message.created_at,
             user={
                 "id": str(message.sender_id),
-                "username": message.sender.username,
-                "email": message.sender.email,
+                "username": user.username,
+                "email": user.email,
             }
         )
         history_messages.append(chat_message_history)
