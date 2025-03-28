@@ -151,9 +151,3 @@ class FileDAO:
             logger.error(error)
 
         return contents
-
-
-"""
-{'ResponseMetadata': {'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Thu, 27 Mar 2025 16:09:15 GMT', 'content-type': 'application/xml', 'content-length': '284', 'connection': 'keep-alive', 'vary': 'Accept-Encoding', 'server': 'cloudflare', 'cf-ray': '927026b0af950e3d-AMS'}, 'RetryAttempts': 0}, 'IsTruncated': False, 'Name': 'hivey-files', 'Prefix': 'simple_article', 'MaxKeys': 1, 'EncodingType': 'url', 'KeyCount': 0}
-
-"""

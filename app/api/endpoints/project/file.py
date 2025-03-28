@@ -4,7 +4,7 @@ from typing import Annotated
 
 from app.api.deps import get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreate
+from app.models.project.file import File, FileCreate, FileURL
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
@@ -58,7 +58,8 @@ async def get_file_url(
         raise HTTPException(status_code=404, detail="File not found")
 
     url = await FileDAO.generate_get_obj_link_for_file(file=file, expiration=3600)
-    return APIResponse(status_code=200, data=url, msg="success")
+
+    return APIResponse(status_code=200, data=FileURL(url=url), msg="success")
 
 
 # @router.get("/{file_id:uuid}")
