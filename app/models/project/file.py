@@ -31,4 +31,4 @@ class FileUpdate(Base):
 
 
 class FileURL(Base):
-    url: str = Field(..., max_length=255)
+    url: str = Field(..., max_length=1024)
