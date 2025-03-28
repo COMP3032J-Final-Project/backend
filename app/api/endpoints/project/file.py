@@ -9,10 +9,11 @@ from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from fastapi.responses import StreamingResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+# from
 router = APIRouter()
 
 
@@ -43,7 +44,7 @@ async def list_files(
 
 @router.get("/{file_id:uuid}")
 async def get_file_url(
-    file_id: uuid.UUID,
+    file_id: Annotated[uuid.UUID, Path(...)],
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
