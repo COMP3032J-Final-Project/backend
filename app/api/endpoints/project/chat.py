@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_project, get_db
 from app.models.base import APIResponse
-from app.models.project.chat import ChatRoomUpdate, ChatHistoryMessage, ChatHistoryResponse
+from app.models.project.chat import ChatRoomUpdate, ChatHistoryMessage
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
@@ -35,14 +35,14 @@ async def update_chat_room(
     return APIResponse(code=200, data=updated_chat_room, msg="success")
 
 
-@router.get("/history", response_model=APIResponse[ChatHistoryResponse])
+@router.get("/history", response_model=APIResponse[List[ChatHistoryMessage]])
 async def get_chat_history(
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
     max_num: int,
     last_timestamp: Optional[str] = None,
-) -> APIResponse[ChatHistoryResponse]:
+) -> APIResponse[List[ChatHistoryMessage]]:
     """获取聊天室历史消息"""
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_member:
@@ -71,14 +71,11 @@ async def get_chat_history(
                 "id": str(message.sender_id),
                 "username": user.username,
                 "email": user.email,
-            }
+            },
         )
         history_messages.append(chat_message_history)
 
-    response_data = ChatHistoryResponse(
-        messages=history_messages,
-    )
     if has_more:
-        return APIResponse(code=200, data=response_data, msg="success")
+        return APIResponse(code=200, data=history_messages, msg="success")
     else:
-        return APIResponse(code=201, data=response_data, msg="no more messages")
+        return APIResponse(code=201, data=history_messages, msg="no more messages")

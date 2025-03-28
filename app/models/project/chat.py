@@ -125,9 +125,3 @@ class ChatHistoryMessage(Base):
         ...,
         sa_column_kwargs={"nullable": False},
     )
-
-
-class ChatHistoryResponse(Base):
-    """历史记录响应模型"""
-
-    messages: List[ChatHistoryMessage] = Field(...)
