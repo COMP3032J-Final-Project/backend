@@ -60,7 +60,7 @@ async def get_file_url(
 
     url = await FileDAO.generate_get_obj_link_for_file(file=file, expiration=3600)
 
-    return APIResponse(status_code=200, data=FileURL(url=url), msg="success")
+    return APIResponse(code=200, data=FileURL(url=url), msg="success")
 
 
 # @router.get("/{file_id:uuid}")
