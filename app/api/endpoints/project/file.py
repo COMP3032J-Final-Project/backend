@@ -3,7 +3,7 @@ from typing import Annotated
 
 from app.api.deps import get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreate, FileStatus, FileURL, FileUploadResponse
+from app.models.project.file import File, FileCreate, FileUpdate, FileStatus, FileURL, FileUploadResponse
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
@@ -61,6 +61,26 @@ async def create_file(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
     new_file = await FileDAO.create_file(file_create=file_create, project=current_project, db=db)
+    return APIResponse(code=200, data=new_file, msg="success")
+
+
+@router.post("/update", response_model=APIResponse[File])
+async def update_file(
+    file_update: FileUpdate,
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[File]:
+    new_file = await FileDAO.update_file(file_update=file_update, project=current_project, db=db)
+    return APIResponse(code=200, data=new_file, msg="success")
+
+
+@router.post("/delete", response_model=APIResponse[File])
+async def update_file(
+    file_delete: FileUpdate,
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[File]:
+    new_file = await FileDAO.delete_file(file=file_delete, project=current_project, db=db)
     return APIResponse(code=200, data=new_file, msg="success")
 
 

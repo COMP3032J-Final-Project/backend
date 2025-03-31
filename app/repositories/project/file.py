@@ -8,7 +8,7 @@ import botocore
 from sqlmodel import select
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.project.file import File, FileCreate
+from app.models.project.file import File, FileCreate, FileUpdate
 from app.models.project.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,9 +62,21 @@ class FileDAO:
         await db.commit()
         await db.refresh(file)
         return file
+    
 
     @staticmethod
-    async def delete_file(file: File, db: AsyncSession) -> None:
+    async def update_file(file_update: FileUpdate, project: Project, db: AsyncSession) -> File:
+        file = await db.get(File, file_update.file_id)
+        file.filename=file_update.filename
+        file.filepath=file_update.filepath
+        db.add(file)
+        await db.commit()
+        await db.refresh(file)
+        return file
+
+
+    @staticmethod
+    async def delete_file(file: File, project: Project, db: AsyncSession) -> None:
         await db.delete(file)
         await db.commit()
 

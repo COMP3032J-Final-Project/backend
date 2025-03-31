@@ -42,7 +42,7 @@ async def create_template_projects(db: AsyncSession) -> None:
 
         # delete file currently associated with the Project instance.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
-            await FileDAO.delete_file(file=file, db=db)
+            await FileDAO.delete_file(file=file, project=project, db=db)
 
         # delete any file from remote storage
         for key in await FileDAO.list_r2_keys(prefix=folder.name):
