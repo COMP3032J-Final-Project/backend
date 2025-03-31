@@ -2,9 +2,10 @@ import logging
 import os
 import uuid
 from pathlib import PureWindowsPath
-from typing import Any, BinaryIO, List, Optional, Type
+from typing import List, Optional
 
 import botocore
+from sqlmodel import select
 from app.core.config import settings
 from app.core.r2client import r2client
 from app.models.project.file import File, FileCreate
@@ -41,8 +42,22 @@ class FileDAO:
         return await db.get(File, file_id)
 
     @staticmethod
+    async def get_file_by_path(filename: str, filepath: str, db: AsyncSession) -> Optional[File]:
+        """
+        通过文件名和路径查找文件
+        """
+        query = select(File).where(File.filename == filename, File.filepath == filepath)
+        result = await db.execute(query)
+        return result.scalars().first()
+
+    @staticmethod
     async def create_file(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
-        file = File(filename=file_create.filename, filepath=force_posix(file_create.filepath), filetype=file_create.filetype, project_id=project.id)
+        file = File(
+            filename=file_create.filename,
+            filepath=force_posix(file_create.filepath),
+            filetype=file_create.filetype,
+            project_id=project.id,
+        )
         db.add(file)
         await db.commit()
         await db.refresh(file)
@@ -52,29 +67,6 @@ class FileDAO:
     async def delete_file(file: File, db: AsyncSession) -> None:
         await db.delete(file)
         await db.commit()
-
-    # @staticmethod
-    # async def pull_file_from_r2(file: File) -> BinaryIO:
-    #     """
-    #     将远程文件拉到本地，保留原本文件树结构
-    #     """
-
-    # # TODO 暂时从本地 templates 文件夹读取文件
-    # try:
-    #     file_path = os.path.join("./templates", file.filepath, file.filename)
-    #     return open(file_path, "rb")
-    # except Exception as error:
-    #     logger.error(f"Error reading file from local: {error}")
-    #     return None
-
-    # flp = FileDAO.get_temp_file_path(file=file)
-    # fp = FileDAO.get_remote_file_path(file=file)
-    # try:
-    #     with open(flp, "wb") as f:
-    #         r2client.download_fileobj(settings.R2_BUCKET, fp, f)
-    # except botocore.exceptions.ClientError as error:
-    #     logger.error(error)
-    # return f
 
     @staticmethod
     async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
@@ -101,6 +93,49 @@ class FileDAO:
             logger.error(error)
 
         return response
+
+    async def generate_put_obj_link_from_key(key: str, expiration=3600) -> str:
+        """
+        使用 R2 key 生成上传文件的临时 PUT 链接
+        """
+
+        try:
+            # 使用 boto3/r2client 生成 presigned URL
+            response = r2client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": settings.R2_BUCKET,
+                    "Key": key,
+                },
+                ExpiresIn=expiration,
+            )
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+            raise
+
+        return response
+
+    @staticmethod
+    async def generate_put_obj_link_for_file(file: File, expiration=3600) -> str:
+        """
+        为文件生成上传的临时链接
+        """
+        fp = FileDAO.get_remote_file_path(file=file)
+        url = await FileDAO.generate_put_obj_link_from_key(key=fp, expiration=expiration)
+        return url
+
+    @staticmethod
+    async def check_file_in_r2(file: File) -> bool:
+        """
+        检查文件是否在R2中存在
+        """
+        try:
+            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file=file))
+            return True
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                return False
+            raise
 
     @staticmethod
     async def push_file_to_r2(file: File, localpath: str = "") -> None:
@@ -151,3 +186,14 @@ class FileDAO:
             logger.error(error)
 
         return contents
+
+    @staticmethod
+    async def get_pending_files(project_id: uuid.UUID, db: AsyncSession) -> List[File]:
+        """
+        获取项目中状态为pending的文件
+        """
+        from app.models.project.file import FileStatus
+
+        query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
+        result = await db.execute(query)
+        return result.scalars().all()

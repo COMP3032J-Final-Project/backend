@@ -71,7 +71,6 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
     """
     获取当前用户
     """
-    
     try:
         token = websocket.query_params.get("access_token")
         if not token:
@@ -84,7 +83,11 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
         if not user or not user.is_active:
             raise TokenValidationException
         return user
-    except (TokenValidationException, JWTError, ValueError, ):
+    except (
+        TokenValidationException,
+        JWTError,
+        ValueError,
+    ):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         raise WebSocketDisconnect(code=status.WS_1008_POLICY_VIOLATION, reason="Could not validate credentials")
     except WebSocketDisconnect:

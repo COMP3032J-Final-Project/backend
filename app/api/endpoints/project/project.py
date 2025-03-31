@@ -1,16 +1,24 @@
 from typing import Annotated, List
 
-from app.api.deps import get_current_project, get_current_user, get_db
-from app.models.base import APIResponse
-from app.models.project.project import (OwnerInfo, Project, ProjectCreate,
-                                        ProjectID, ProjectInfo,
-                                        ProjectPermission, ProjectsDelete,
-                                        ProjectType, ProjectUpdate)
-from app.models.user import User, UserInfo
-from app.repositories.project.chat import ChatDAO
-from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_project, get_current_user, get_db
+from app.models.base import APIResponse
+from app.models.project.project import (
+    OwnerInfo,
+    Project,
+    ProjectCreate,
+    ProjectID,
+    ProjectInfo,
+    ProjectPermission,
+    ProjectsDelete,
+    ProjectType,
+    ProjectUpdate,
+)
+from app.models.user import User
+from app.repositories.project.chat import ChatDAO
+from app.repositories.project.project import ProjectDAO
 
 router = APIRouter()
 
