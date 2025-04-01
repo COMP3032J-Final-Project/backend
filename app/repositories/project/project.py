@@ -2,9 +2,7 @@ import uuid
 from typing import Optional
 
 from app.models.project.file import File, FileCreate
-from app.models.project.project import (Project, ProjectCreate,
-                                        ProjectPermission, ProjectUpdate,
-                                        ProjectUser)
+from app.models.project.project import Project, ProjectCreate, ProjectPermission, ProjectUpdate, ProjectUser
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +19,7 @@ class ProjectDAO:
         db: AsyncSession,
     ) -> Optional[Project]:
         return await db.get(Project, project_id)
-    
+
     @staticmethod
     async def get_project_by_name(
         project_name: str,
@@ -247,10 +245,10 @@ class ProjectDAO:
         复制模板项目的文件到新项目(未完成)
         """
         template_files = await ProjectDAO.get_files(template_project, db)
-        
+
         # 复制文件
         for template_file in template_files:
-            new_file = await FileDAO.create_file(
+            new_file = await FileDAO.create_file_in_db(
                 file_create=FileCreate(
                     filename=template_file.filename,
                     filepath=template_file.filepath,

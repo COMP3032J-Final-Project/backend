@@ -26,7 +26,7 @@ async def startup_handler() -> None:
 
     async for db in get_db():
         await create_default_admin(db)
-        await create_template_projects(db)
+        # await create_template_projects(db)
 
     await dumb_broadcaster.initialize()
     await cursor_tracking_broadcaster.initialize()

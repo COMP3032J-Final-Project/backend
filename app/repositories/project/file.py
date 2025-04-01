@@ -8,8 +8,9 @@ import botocore
 from sqlmodel import select
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.project.file import File, FileCreate, FileUpdate
+from app.models.project.file import File, FileCreate, FileStatus, FileUpdate
 from app.models.project.project import Project
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("uvicorn.error")
@@ -20,6 +21,20 @@ def force_posix(path: str) -> str:
     https://stackoverflow.com/questions/75291812/how-do-i-normalize-a-path-format-to-unix-style-while-on-windows
     """
     return PureWindowsPath(os.path.normpath(PureWindowsPath(path).as_posix())).as_posix()
+
+
+def build_remote_file_path(project_id: uuid.UUID, filepath: str, filename: str) -> str:
+    normalized_path = None
+    if filepath is not None and filepath not in ["/", ".", "./"]:
+        normalized_path = force_posix(filepath).strip("/").strip(".")
+        if not normalized_path:  # normalized_path == ""
+            normalized_path = None
+
+    base_path = f"project/{project_id}"
+    if normalized_path is None:
+        return f"{base_path}/{filename}"
+    else:
+        return f"{base_path}/{normalized_path}/{filename}"
 
 
 class FileDAO:
@@ -34,27 +49,40 @@ class FileDAO:
     def get_remote_file_path(file: File) -> str:
         """
         R2平台路径必须使用POSIX类路径
+        返回格式: project/{project_id}/path/to/filename
         """
-        return force_posix(os.path.join(file.filepath, file.filename))
+        return build_remote_file_path(project_id=file.project_id, filepath=file.filepath, filename=file.filename)
 
     @staticmethod
     async def get_file_by_id(file_id: uuid.UUID, db: AsyncSession) -> Optional[File]:
         return await db.get(File, file_id)
 
     @staticmethod
-    async def get_file_by_path(filename: str, filepath: str, db: AsyncSession) -> Optional[File]:
+    async def get_file_by_path(project_id: uuid.UUID, filepath: str, filename: str, db: AsyncSession) -> Optional[File]:
         """
-        通过文件名和路径查找文件
+        通过文件名、路径和项目ID查找数据库file
         """
-        query = select(File).where(File.filename == filename, File.filepath == filepath)
+        query = select(File).where(File.project_id == project_id, File.filepath == filepath, File.filename == filename)
         result = await db.execute(query)
         return result.scalars().first()
 
     @staticmethod
-    async def create_file(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
+    async def get_pending_files(project_id: uuid.UUID, db: AsyncSession) -> List[File]:
+        """
+        获取项目中状态为pending的文件
+        """
+        query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    @staticmethod
+    async def create_file_in_db(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
+        """
+        创建db文件
+        """
         file = File(
             filename=file_create.filename,
-            filepath=force_posix(file_create.filepath),
+            filepath=file_create.filepath,
             filetype=file_create.filetype,
             project_id=project.id,
         )
@@ -62,23 +90,87 @@ class FileDAO:
         await db.commit()
         await db.refresh(file)
         return file
-    
 
     @staticmethod
-    async def update_file(file_update: FileUpdate, project: Project, db: AsyncSession) -> File:
-        file = await db.get(File, file_update.file_id)
-        file.filename=file_update.filename
-        file.filepath=file_update.filepath
-        db.add(file)
-        await db.commit()
-        await db.refresh(file)
-        return file
-
+    async def update_file_in_db(file: File, file_update: FileUpdate, db: AsyncSession) -> Optional[File]:
+        """
+        更新db中文件
+        """
+        try:
+            update_data = file_update.model_dump(exclude_unset=True, exclude_none=True)
+            for field in update_data:
+                setattr(file, field, update_data[field])
+            await db.commit()
+            await db.refresh(file)
+            return file
+        except IntegrityError:
+            await db.rollback()
+            return None
 
     @staticmethod
-    async def delete_file(file: File, project: Project, db: AsyncSession) -> None:
+    async def delete_file_in_db(file: File, db: AsyncSession) -> None:
+        """
+        从数据库中删除文件
+        """
         await db.delete(file)
         await db.commit()
+
+    @staticmethod
+    async def update_file_in_r2(file: File, file_update: FileUpdate) -> bool:
+        """
+        更新R2中的文件
+        """
+        try:
+            if not await FileDAO.check_file_in_r2(file):
+                return False
+
+            # 检查文件路径或文件名是否发生变化
+            new_filepath = file_update.filepath or file.filepath
+            new_filename = file_update.filename or file.filename
+            if new_filepath != file.filepath or new_filename != file.filename:
+                old_key = FileDAO.get_remote_file_path(file)
+                new_key = build_remote_file_path(
+                    project_id=file.project_id,
+                    filepath=new_filepath,
+                    filename=new_filename,
+                )
+
+                # 获取原文件内容和元数据
+                response = r2client.head_object(Bucket=settings.R2_BUCKET, Key=old_key)
+                metadata = response.get("Metadata", {})
+                obj = r2client.get_object(Bucket=settings.R2_BUCKET, Key=old_key)
+                file_content = obj["Body"].read()
+
+                # 上传新文件
+                r2client.put_object(
+                    Bucket=settings.R2_BUCKET,
+                    Key=new_key,
+                    Body=file_content,
+                    Metadata=metadata,
+                    ContentType=response.get("ContentType"),
+                )
+
+                # 删除原文件
+                r2client.delete_object(Bucket=settings.R2_BUCKET, Key=old_key)
+            return True
+        except botocore.exceptions.ClientError as error:
+            logger.error(f"Error updating file in R2: {error}")
+            return False
+
+    @staticmethod
+    async def delete_file_in_r2(file: File) -> bool:
+        """
+        从R2中删除文件
+        """
+        try:
+            if not await FileDAO.check_file_in_r2(file):
+                return False
+
+            r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
+            return True
+        except botocore.exceptions.ClientError as error:
+            logger.error(f"Error deleting file from R2: {error}")
+            return False
 
     @staticmethod
     async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
@@ -112,7 +204,6 @@ class FileDAO:
         """
 
         try:
-            # 使用 boto3/r2client 生成 presigned URL
             response = r2client.generate_presigned_url(
                 "put_object",
                 Params={
@@ -198,14 +289,3 @@ class FileDAO:
             logger.error(error)
 
         return contents
-
-    @staticmethod
-    async def get_pending_files(project_id: uuid.UUID, db: AsyncSession) -> List[File]:
-        """
-        获取项目中状态为pending的文件
-        """
-        from app.models.project.file import FileStatus
-
-        query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
-        result = await db.execute(query)
-        return result.scalars().all()

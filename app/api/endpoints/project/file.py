@@ -1,17 +1,20 @@
 import uuid
 from typing import Annotated
 
-from app.api.deps import get_current_project, get_current_user, get_db
+from app.api.deps import get_current_file, get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreate, FileUpdate, FileStatus, FileURL, FileUploadResponse
+from app.models.project.file import File, FileCreate, FileType, FileUpdate, FileStatus, FileURL, FileUploadResponse
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel.ext.asyncio.session import AsyncSession
+import logging
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=APIResponse[File])
@@ -28,29 +31,30 @@ async def list_files(
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
     files = await ProjectDAO.get_files(project=current_project, db=db)
-    return APIResponse(code=200, data=files)
+    files = [file for file in files if file.status == FileStatus.UPLOADED]
+    return APIResponse(code=200, data=files, msg="success")
 
 
 @router.get("/{file_id:uuid}")
 async def get_file_download_url(
-    file_id: Annotated[uuid.UUID, Path(...)],
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
+    current_file: Annotated[File, Depends(get_current_file)],
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+) -> APIResponse[FileURL]:
     """
     获取文件下载URL
     """
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this project")
+        raise HTTPException(status_code=403, detail="No permission to access this file")
 
-    file = await FileDAO.get_file_by_id(file_id=file_id, db=db)
-    if not file:
+    if current_file.status != FileStatus.UPLOADED:
         raise HTTPException(status_code=404, detail="File not found")
+    if current_file.filetype == FileType.FOLDER:
+        raise HTTPException(status_code=400, detail="Folder cannot be downloaded")
 
-    url = await FileDAO.generate_get_obj_link_for_file(file=file, expiration=3600)
-
+    url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
 
 
@@ -60,28 +64,62 @@ async def create_file(
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
-    new_file = await FileDAO.create_file(file_create=file_create, project=current_project, db=db)
+    new_file = await FileDAO.create_file_in_db(file_create=file_create, project=current_project, db=db)
     return APIResponse(code=200, data=new_file, msg="success")
 
 
-@router.post("/update", response_model=APIResponse[File])
+@router.put("/{file_id:uuid}", response_model=APIResponse[File])
 async def update_file(
     file_update: FileUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
+    current_file: Annotated[File, Depends(get_current_file)],
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
-    new_file = await FileDAO.update_file(file_update=file_update, project=current_project, db=db)
-    return APIResponse(code=200, data=new_file, msg="success")
+    """
+    更新文件信息
+    """
+    # 检查用户权限
+    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    if not is_member or is_viewer:
+        raise HTTPException(status_code=403, detail="No permission to update this file")
+
+    try:
+        if current_file.filetype == FileType.FILE and not await FileDAO.update_file_in_r2(current_file, file_update):
+            return APIResponse(code=200, msg="Failed to update file in R2")
+
+        updated_file = await FileDAO.update_file_in_db(current_file, file_update, db)
+        if not updated_file:
+            raise HTTPException(status_code=500, detail="Failed to update file in database")
+        return APIResponse(code=200, data=updated_file, msg="success")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to update file")
 
 
-@router.post("/delete", response_model=APIResponse[File])
-async def update_file(
-    file_delete: FileUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
+@router.delete("/{file_id:uuid}", response_model=APIResponse[File])
+async def delete_file(
+    current_file: Annotated[File, Depends(get_current_file)],
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
-    new_file = await FileDAO.delete_file(file=file_delete, project=current_project, db=db)
-    return APIResponse(code=200, data=new_file, msg="success")
+    """
+    删除文件
+    """
+    # 检查用户权限
+    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    if not is_member or is_viewer:
+        raise HTTPException(status_code=403, detail="No permission to delete this file")
+
+    try:
+        if current_file.filetype == FileType.FILE and not await FileDAO.delete_file_in_r2(current_file):
+            raise HTTPException(status_code=500, detail="Failed to delete file in R2")
+
+        await FileDAO.delete_file_in_db(current_file, db)
+        return APIResponse(code=200, msg="success")
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete file")
 
 
 @router.post("/upload-url", response_model=APIResponse[FileUploadResponse])
@@ -101,12 +139,18 @@ async def get_file_upload_url(
         raise HTTPException(status_code=403, detail="No permission to upload files")
 
     # 检查文件是否已存在
-    file = await FileDAO.get_file_by_path(file_create.filename, file_create.filepath, db)
+    file = await FileDAO.get_file_by_path(current_project.id, file_create.filepath, file_create.filename, db)
     if file:
         raise HTTPException(status_code=400, detail="File already exists")
 
-    new_file = await FileDAO.create_file(file_create, current_project, db)
-    url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
+    # 仅文件类型上传URL
+    url = None
+    if file_create.filetype == FileType.FILE:
+        new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
+        url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
+    elif file_create.filetype == FileType.FOLDER:
+        new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
+        new_file.status = FileStatus.UPLOADED
 
     response_data = FileUploadResponse(
         file_id=new_file.id,
@@ -115,13 +159,13 @@ async def get_file_upload_url(
     return APIResponse(code=200, data=response_data, msg="success")
 
 
-@router.put("/{file_id}/confirm-upload", response_model=APIResponse)
+@router.put("/{file_id}/confirm-upload", response_model=APIResponse[File])
 async def confirm_file_upload(
-    file_id: Annotated[uuid.UUID, Path(...)],
     current_project: Annotated[Project, Depends(get_current_project)],
+    current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+) -> APIResponse[File]:
     """
     确认文件已上传到R2
     """
@@ -131,20 +175,20 @@ async def confirm_file_upload(
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
-    # 检查文件
-    file = await FileDAO.get_file_by_id(file_id, db)
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
-    if file.project_id != current_project.id:
-        raise HTTPException(status_code=403, detail="No permission to access this file")
-
     # 检查文件是否存在于R2
-    is_exists = await FileDAO.check_file_in_r2(file)
+    is_exists = await FileDAO.check_file_in_r2(current_file)
     if is_exists:
-        file.status = FileStatus.UPLOADED
-        await db.commit()
-        return APIResponse(code=200, data=file, msg="File uploaded successfully")
+        await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.UPLOADED), db)
+        return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
     else:
-        file.status = FileStatus.FAILED
-        await db.commit()
+        # TODO 处理文件未上传的情况
+        await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.FAILED), db)
         raise HTTPException(status_code=404, detail="File not uploaded to R2")
+
+
+@router.put("/{file_id}/test", response_model=APIResponse)
+async def test_remote_file_path(
+    file_id: Annotated[uuid.UUID, Path(...)],
+):
+    filepath = FileDAO.get_remote_file_path(file_id)
+    return APIResponse(code=200, data=filepath, msg="success")

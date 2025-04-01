@@ -27,14 +27,11 @@ class FileCreate(Base):
 
 
 class FileUpdate(Base):
-    file_id: uuid.UUID
-    filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
-    filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
+    filename: str | None = Field(default=None, max_length=255, sa_column_kwargs={"nullable": False, "index": True})
+    filepath: str | None = Field(default=None, max_length=1024, sa_column_kwargs={"nullable": False})
+    filetype: FileType | None = Field(default=None)
+    status: FileStatus | None = Field(default=None)
 
-class FileDelete(Base):
-    file_id: uuid.UUID
-    filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
-    filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
 
 class FileURL(Base):
     url: str = Field(..., max_length=1024)
@@ -42,7 +39,7 @@ class FileURL(Base):
 
 class FileUploadResponse(Base):
     file_id: uuid.UUID
-    url: str = Field(..., max_length=1024)
+    url: str | None = Field(default=None, max_length=1024)
 
 
 class File(BaseDB, table=True):

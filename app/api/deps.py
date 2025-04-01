@@ -10,9 +10,11 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
 from app.core.db import async_session
+from app.models.project.file import File
 from app.models.project.project import Project
 from app.models.token import TokenPayload
 from app.models.user import User
+from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
 
@@ -116,3 +118,14 @@ async def get_current_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     return project
+
+
+async def get_current_file(
+    file_id: Annotated[uuid.UUID, Path(...)],
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> File:
+    file = await FileDAO.get_file_by_id(file_id, db)
+    if not file or file.project_id != current_project.id:
+        raise HTTPException(status_code=404, detail="File not found")
+    return file
