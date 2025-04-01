@@ -180,3 +180,12 @@ cython_debug/
 *.sublime-workspace
 # temporary test file
 test.py
+
+# latex 编译的中间步骤文件
+*.aux
+*.log
+*.blg
+*.synctex.gz
+*.tex
+*bbl
+*toc
