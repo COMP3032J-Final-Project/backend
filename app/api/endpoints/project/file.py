@@ -1,16 +1,18 @@
+import logging
 import uuid
 from typing import Annotated
 
-from app.api.deps import get_current_file, get_current_project, get_current_user, get_db
+from app.api.deps import (get_current_file, get_current_project,
+                          get_current_user, get_db)
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreate, FileType, FileUpdate, FileStatus, FileURL, FileUploadResponse
+from app.models.project.file import (File, FileCreate, FileType,
+                                     FileUploadResponse, FileURL)
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel.ext.asyncio.session import AsyncSession
-import logging
 
 router = APIRouter()
 
@@ -68,34 +70,6 @@ async def create_file(
     return APIResponse(code=200, data=new_file, msg="success")
 
 
-@router.put("/{file_id:uuid}", response_model=APIResponse[File])
-async def update_file(
-    file_update: FileUpdate,
-    current_file: Annotated[File, Depends(get_current_file)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIResponse[File]:
-    """
-    更新文件信息
-    """
-    # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
-    if not is_member or is_viewer:
-        raise HTTPException(status_code=403, detail="No permission to update this file")
-
-    try:
-        if current_file.filetype == FileType.FILE and not await FileDAO.update_file_in_r2(current_file, file_update):
-            return APIResponse(code=200, msg="Failed to update file in R2")
-
-        updated_file = await FileDAO.update_file_in_db(current_file, file_update, db)
-        if not updated_file:
-            raise HTTPException(status_code=500, detail="Failed to update file in database")
-        return APIResponse(code=200, data=updated_file, msg="success")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to update file")
-
-
 @router.delete("/{file_id:uuid}", response_model=APIResponse[File])
 async def delete_file(
     current_file: Annotated[File, Depends(get_current_file)],
@@ -150,12 +124,9 @@ async def get_file_upload_url(
         url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
     elif file_create.filetype == FileType.FOLDER:
         new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
-        new_file.status = FileStatus.UPLOADED
+        # new_file.status = FileStatus.UPLOADED
 
-    response_data = FileUploadResponse(
-        file_id=new_file.id,
-        url=url,
-    )
+    response_data = FileUploadResponse(file_id=new_file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
 
 
@@ -178,12 +149,14 @@ async def confirm_file_upload(
     # 检查文件是否存在于R2
     is_exists = await FileDAO.check_file_in_r2(current_file)
     if is_exists:
-        await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.UPLOADED), db)
+        # await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.UPLOADED), db)
         return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
     else:
         # TODO 处理文件未上传的情况
-        await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.FAILED), db)
-        raise HTTPException(status_code=404, detail="File not uploaded to R2")
+        # await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.FAILED), db)
+        pass
+
+    raise HTTPException(status_code=404, detail="File not uploaded to R2")
 
 
 @router.put("/{file_id}/test", response_model=APIResponse)

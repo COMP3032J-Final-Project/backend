@@ -5,13 +5,13 @@ from pathlib import PureWindowsPath
 from typing import List, Optional
 
 import botocore
-from sqlmodel import select
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.project.file import File, FileCreate, FileStatus, FileUpdate
+from app.models.project.file import File, FileCreate  # , FileStatus
 from app.models.project.project import Project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -21,20 +21,6 @@ def force_posix(path: str) -> str:
     https://stackoverflow.com/questions/75291812/how-do-i-normalize-a-path-format-to-unix-style-while-on-windows
     """
     return PureWindowsPath(os.path.normpath(PureWindowsPath(path).as_posix())).as_posix()
-
-
-def build_remote_file_path(project_id: uuid.UUID, filepath: str, filename: str) -> str:
-    normalized_path = None
-    if filepath is not None and filepath not in ["/", ".", "./"]:
-        normalized_path = force_posix(filepath).strip("/").strip(".")
-        if not normalized_path:  # normalized_path == ""
-            normalized_path = None
-
-    base_path = f"project/{project_id}"
-    if normalized_path is None:
-        return f"{base_path}/{filename}"
-    else:
-        return f"{base_path}/{normalized_path}/{filename}"
 
 
 class FileDAO:
@@ -49,9 +35,14 @@ class FileDAO:
     def get_remote_file_path(file: File) -> str:
         """
         R2平台路径必须使用POSIX类路径
-        返回格式: project/{project_id}/path/to/filename
+        返回格式: project/{project_id}/{filepath}/{filename}
         """
-        return build_remote_file_path(project_id=file.project_id, filepath=file.filepath, filename=file.filename)
+        logger.info(str(file.project_id))
+        logger.info(str(file.filepath))
+        logger.info(str(file.filename))
+        rp = force_posix(os.path.join("project", str(file.project_id), str(file.filepath), str(file.filename)))
+        logger.info(rp)
+        return rp
 
     @staticmethod
     async def get_file_by_id(file_id: uuid.UUID, db: AsyncSession) -> Optional[File]:
@@ -92,70 +83,12 @@ class FileDAO:
         return file
 
     @staticmethod
-    async def update_file_in_db(file: File, file_update: FileUpdate, db: AsyncSession) -> Optional[File]:
-        """
-        更新db中文件
-        """
-        try:
-            update_data = file_update.model_dump(exclude_unset=True, exclude_none=True)
-            for field in update_data:
-                setattr(file, field, update_data[field])
-            await db.commit()
-            await db.refresh(file)
-            return file
-        except IntegrityError:
-            await db.rollback()
-            return None
-
-    @staticmethod
     async def delete_file_in_db(file: File, db: AsyncSession) -> None:
         """
         从数据库中删除文件
         """
         await db.delete(file)
         await db.commit()
-
-    @staticmethod
-    async def update_file_in_r2(file: File, file_update: FileUpdate) -> bool:
-        """
-        更新R2中的文件
-        """
-        try:
-            if not await FileDAO.check_file_in_r2(file):
-                return False
-
-            # 检查文件路径或文件名是否发生变化
-            new_filepath = file_update.filepath or file.filepath
-            new_filename = file_update.filename or file.filename
-            if new_filepath != file.filepath or new_filename != file.filename:
-                old_key = FileDAO.get_remote_file_path(file)
-                new_key = build_remote_file_path(
-                    project_id=file.project_id,
-                    filepath=new_filepath,
-                    filename=new_filename,
-                )
-
-                # 获取原文件内容和元数据
-                response = r2client.head_object(Bucket=settings.R2_BUCKET, Key=old_key)
-                metadata = response.get("Metadata", {})
-                obj = r2client.get_object(Bucket=settings.R2_BUCKET, Key=old_key)
-                file_content = obj["Body"].read()
-
-                # 上传新文件
-                r2client.put_object(
-                    Bucket=settings.R2_BUCKET,
-                    Key=new_key,
-                    Body=file_content,
-                    Metadata=metadata,
-                    ContentType=response.get("ContentType"),
-                )
-
-                # 删除原文件
-                r2client.delete_object(Bucket=settings.R2_BUCKET, Key=old_key)
-            return True
-        except botocore.exceptions.ClientError as error:
-            logger.error(f"Error updating file in R2: {error}")
-            return False
 
     @staticmethod
     async def delete_file_in_r2(file: File) -> bool:
@@ -269,7 +202,7 @@ class FileDAO:
             logger.error(error)
 
     @staticmethod
-    async def list_r2_keys(prefix: str = os.path.normpath("./"), maxkeys=100) -> List[str]:
+    async def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
         """
         R2 key = 远程文件夹+远程文件名
         """
@@ -281,7 +214,7 @@ class FileDAO:
             while "NextContinuationToken" in response:
                 continuation_token = response["NextContinuationToken"]
                 response = r2client.list_objects_v2(
-                    Bucket="hivey-files", Prefix="simple_article", MaxKeys=maxkeys, ContinuationToken=continuation_token
+                    Bucket="hivey-files", Prefix=prefix, MaxKeys=maxkeys, ContinuationToken=continuation_token
                 )
                 contents.extend(content["Key"] for content in response["Contents"])
 
@@ -289,3 +222,10 @@ class FileDAO:
             logger.error(error)
 
         return contents
+
+    @staticmethod
+    async def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
+        """
+        拉取某一特定project对应的文件
+        """
+        return await FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))

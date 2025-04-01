@@ -1,24 +1,16 @@
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.project import (
-    OwnerInfo,
-    Project,
-    ProjectCreate,
-    ProjectID,
-    ProjectInfo,
-    ProjectPermission,
-    ProjectsDelete,
-    ProjectType,
-    ProjectUpdate,
-)
+from app.models.project.project import (OwnerInfo, Project, ProjectCreate,
+                                        ProjectID, ProjectInfo,
+                                        ProjectPermission, ProjectsDelete,
+                                        ProjectType, ProjectUpdate)
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -87,24 +79,24 @@ async def get_project(
     return APIResponse(code=200, data=project_info, msg="success")
 
 
-@router.put("/{project_id:uuid}", response_model=APIResponse[Project])
-async def update_project(
-    project_update: ProjectUpdate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIResponse:
-    """更新项目信息"""
-    # 检查用户是否为项目管理员或创建者
-    is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
-    if not is_admin and not is_owner:
-        raise HTTPException(status_code=403, detail="No permission to update this project")
+# @router.put("/{project_id:uuid}", response_model=APIResponse[Project])
+# async def update_project(
+#     project_update: ProjectUpdate,
+#     current_user: Annotated[User, Depends(get_current_user)],
+#     current_project: Annotated[Project, Depends(get_current_project)],
+#     db: Annotated[AsyncSession, Depends(get_db)],
+# ) -> APIResponse:
+#     """更新项目信息"""
+#     # 检查用户是否为项目管理员或创建者
+#     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
+#     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
+#     if not is_admin and not is_owner:
+#         raise HTTPException(status_code=403, detail="No permission to update this project")
 
-    updated_project = await ProjectDAO.update_project(current_project, project_update, db)
-    if updated_project is None:
-        raise HTTPException(status_code=400, detail="Failed to update project")
-    return APIResponse(code=200, data=updated_project, msg="Project updated")
+#     updated_project = await ProjectDAO.update_project(current_project, project_update, db)
+#     if updated_project is None:
+#         raise HTTPException(status_code=400, detail="Failed to update project")
+#     return APIResponse(code=200, data=updated_project, msg="Project updated")
 
 
 @router.delete("/", response_model=APIResponse)

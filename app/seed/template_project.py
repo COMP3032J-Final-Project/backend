@@ -13,6 +13,7 @@ from app.repositories.user import UserDAO
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 logger = logging.getLogger("uvicorn.error")
+from pathlib import Path
 
 
 async def create_template_projects(db: AsyncSession) -> None:
@@ -42,24 +43,23 @@ async def create_template_projects(db: AsyncSession) -> None:
 
         # delete file currently associated with the Project instance.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
-            await FileDAO.delete_file(file=file, project=project, db=db)
+            await FileDAO.delete_file_in_db(file=file, db=db)
 
         # delete any file from remote storage
-        for key in await FileDAO.list_r2_keys(prefix=folder.name):
+        for key in await FileDAO.list_project_r2_keys(project_id=template_project.id):
             await FileDAO.delete_key_from_r2(key=key)
 
         # this rests both local and remote to a "clean-slate"
-
         filepaths = glob.glob(os.path.normpath(os.path.join(folder.path, "**.**")), recursive=True)
-        relpaths = [
-            os.path.normpath(os.path.relpath(filepath, os.path.normpath("./templates"))) for filepath in filepaths
-        ]
+        relpaths = [Path(filepath).relative_to(os.path.join("templates", folder.name, "")) for filepath in filepaths]
 
         for filepath, relpath in zip(filepaths, relpaths):
+
             head, tail = os.path.split(relpath)
-            file = await FileDAO.create_file(
-                file_create=FileCreate(filename=tail, filepath=head, filetype=FileType.FILE), project=template_project, db=db
+            file = await FileDAO.create_file_in_db(
+                file_create=FileCreate(filename=tail, filepath=head, filetype=FileType.FILE),
+                project=template_project,
+                db=db,
             )
 
-            # logger.info(await FileDAO.generate_get_obj_link_for_file(file=file))
             await FileDAO.push_file_to_r2(file=file, localpath=filepath)

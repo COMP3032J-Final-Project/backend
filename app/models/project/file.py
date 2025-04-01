@@ -1,6 +1,6 @@
 import uuid
-from typing import TYPE_CHECKING
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from app.models.base import Base, BaseDB
 from sqlmodel import Field, Relationship
@@ -14,23 +14,16 @@ class FileType(str, Enum):
     FOLDER = "folder"
 
 
-class FileStatus(str, Enum):
-    PENDING = "pending"  # 待上传
-    UPLOADED = "uploaded"  # 已上传
-    FAILED = "failed"  # 上传失败
+# class FileStatus(str, Enum):
+#     PENDING = "pending"  # 待上传
+#     UPLOADED = "uploaded"  # 已上传
+#     FAILED = "failed"  # 上传失败
 
 
 class FileCreate(Base):
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
     filetype: FileType = Field(...)
-
-
-class FileUpdate(Base):
-    filename: str | None = Field(default=None, max_length=255, sa_column_kwargs={"nullable": False, "index": True})
-    filepath: str | None = Field(default=None, max_length=1024, sa_column_kwargs={"nullable": False})
-    filetype: FileType | None = Field(default=None)
-    status: FileStatus | None = Field(default=None)
 
 
 class FileURL(Base):
@@ -52,8 +45,5 @@ class File(BaseDB, table=True):
     project: "Project" = Relationship(back_populates="files")
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
-    filetype: FileType = Field(
-        default=FileType.FILE,
-        sa_column_kwargs={"nullable": False},
-    )
-    status: FileStatus = Field(default=FileStatus.PENDING)  # 文件状态
+    filetype: FileType = Field(default=FileType.FILE, sa_column_kwargs={"nullable": False})
+    # status: FileStatus = Field(default=FileStatus.PENDING)  # 文件状态
