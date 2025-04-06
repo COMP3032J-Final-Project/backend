@@ -1,16 +1,66 @@
 from typing import Annotated
+import logging
 
-from fastapi import APIRouter, Path, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Path, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_project, get_db, get_current_user_ws
-from app.core.websocket import dumb_broadcaster, cursor_tracking_broadcaster, chatroom_manager
+from app.core.websocket import (
+    dumb_broadcaster,
+    cursor_tracking_broadcaster,
+    project_general_manager,
+)
 from app.models.project.project import Project
 from app.models.user import User
-from app.repositories.project.chat import ChatDAO
-import typing
+from app.repositories.project.project import ProjectDAO
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+@router.websocket("/")
+async def project_websocket(
+    websocket: WebSocket,
+    current_user: Annotated[User, Depends(get_current_user_ws)],
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    项目统一WebSocket接口 - 处理所有与项目相关的实时通信
+    """
+    await websocket.accept()
+
+    # 检查用户权限
+    try:
+        is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+        if not is_member:
+            await websocket.close(code=4003, reason="No permission to access the project")
+            return
+    except Exception as e:
+        logger.error(f"Error while checking permissions: {e}")
+        await websocket.close(code=4500, reason="Server error")
+        return
+
+    # 连接项目频道
+    current_client_id = str(current_user.id)
+    current_channel = str(current_project.id)
+    try:
+        await project_general_manager.connect(current_client_id, websocket)
+        await project_general_manager.subscribe_client_to_channel(current_client_id, current_channel)
+        logger.info(f"User {current_client_id} connected to project {current_channel}")
+    except Exception as e:
+        logger.error(f"Error connecting to project: {e}")
+        await project_general_manager.disconnect(current_client_id)
+        await websocket.close(code=4500, reason=f"Failed to connect: {str(e)}")
+        return
+
+    try:
+        while True:
+            message = await websocket.receive_text()
+            await project_general_manager.send_message(current_channel, message, current_client_id)
+    except WebSocketDisconnect:
+        await project_general_manager.disconnect(current_client_id)
+        logger.info(f"Client {current_client_id} disconnected from project {current_project.id}")
 
 
 @router.websocket("/cursor")
@@ -50,27 +100,3 @@ async def crdt(
         await dumb_broadcaster.disconnect(client_id)
 
 
-@router.websocket("/chat")
-async def chat(
-    websocket: WebSocket,
-    current_user: Annotated[User, Depends(get_current_user_ws)],
-    current_project: Annotated[Project, Depends(get_current_project)],
-):
-    try:
-        current_chat_room = current_project.chat_room
-        current_channel = str(current_chat_room.id)
-        current_client_id = str(current_user.id)
-    except AttributeError:
-        return
-
-    # 接收连接
-    await websocket.accept()
-    await chatroom_manager.connect(current_client_id, websocket)
-    await chatroom_manager.subscribe_client_to_channel(current_client_id, current_channel)
-
-    try:
-        while True:
-            message = await websocket.receive_text()
-            await chatroom_manager.send_message(current_channel, message, current_client_id)
-    except WebSocketDisconnect:
-        await chatroom_manager.disconnect(current_client_id)

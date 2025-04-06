@@ -12,8 +12,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .db import engine
-from .websocket import (chatroom_manager, cursor_tracking_broadcaster,
-                        dumb_broadcaster)
+from .websocket import (
+    cursor_tracking_broadcaster,
+    dumb_broadcaster,
+    project_general_manager,
+)
 
 
 async def startup_handler() -> None:
@@ -30,7 +33,7 @@ async def startup_handler() -> None:
 
     await dumb_broadcaster.initialize()
     await cursor_tracking_broadcaster.initialize()
-    await chatroom_manager.initialize()
+    await project_general_manager.initialize()
 
 
 async def shutdown_handler() -> None:
@@ -39,7 +42,7 @@ async def shutdown_handler() -> None:
     """
     await dumb_broadcaster.cleanup()
     await cursor_tracking_broadcaster.cleanup()
-    await chatroom_manager.cleanup()
+    await project_general_manager.cleanup()
 
 
 def configure_middleware(app: FastAPI) -> None:

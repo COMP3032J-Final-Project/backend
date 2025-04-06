@@ -14,12 +14,6 @@ class FileType(str, Enum):
     FOLDER = "folder"
 
 
-# class FileStatus(str, Enum):
-#     PENDING = "pending"  # 待上传
-#     UPLOADED = "uploaded"  # 已上传
-#     FAILED = "failed"  # 上传失败
-
-
 class FileCreate(Base):
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
@@ -46,4 +40,3 @@ class File(BaseDB, table=True):
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
     filetype: FileType = Field(default=FileType.FILE, sa_column_kwargs={"nullable": False})
-    # status: FileStatus = Field(default=FileStatus.PENDING)  # 文件状态

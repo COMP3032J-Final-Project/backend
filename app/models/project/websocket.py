@@ -12,6 +12,7 @@ class WSTarget(str, Enum):
     MEMBER = "member"
     FILE = "file"
     CHAT = "chat"
+    ERROR = "error"
 
 
 class WSAction(str, Enum):
@@ -39,8 +40,6 @@ class WSAction(str, Enum):
     MESSAGE_EDITED = "message_edited"
     MESSAGE_WITHDRAWN = "message_withdrawn"
 
-    ERROR = "error"
-
 
 class WSErrorData(Base):
     """错误数据模型"""
@@ -48,20 +47,19 @@ class WSErrorData(Base):
     code: int
     message: str
     original_action: Optional[str] = None  # 原始action
-    request_id: Optional[str] = None
 
 
 class WSMessage(Base):
     """WebSocket消息基础模型"""
 
-    action: WSAction
-    target: WSTarget
-    project_id: Optional[UUID] = None
+    ws_action: Optional[WSAction]
+    ws_target: Optional[WSTarget]
+    channel: Optional[str] = None
     data: Dict[str, Any]
 
 
 class WSErrorMessage(WSMessage):
     """错误消息模型"""
 
-    action: WSAction = WSAction.ERROR
+    ws_target: WSTarget = WSTarget.ERROR
     data: WSErrorData

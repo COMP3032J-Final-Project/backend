@@ -21,6 +21,7 @@ class ChatMessageType(str, Enum):
     JOIN = "join"
     LEAVE = "leave"
     IMAGE = "image"
+    SYSTEM = "system"
     # FILE = "file"
 
 
@@ -103,9 +104,9 @@ class ChatRoomUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
 
 
-class ChatHistoryMessage(Base):
+class ChatMessageData(Base):
     """
-    聊天历史记录模型
+    聊天消息数据模型
     """
 
     message_type: ChatMessageType = Field(

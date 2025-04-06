@@ -2,8 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Sequence
 
-from app.models.project.chat import (ChatMessage, ChatMessageType, ChatRoom,
-                                     ChatRoomUpdate)
+from app.models.project.chat import ChatMessage, ChatMessageType, ChatRoom, ChatRoomUpdate
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select

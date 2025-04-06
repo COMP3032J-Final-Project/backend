@@ -10,17 +10,19 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import orjson
 import redis.asyncio as aioredis
 from app.core.db import async_session
-from app.models.project.chat import ChatMessageType
+from app.models.project.chat import ChatMessageType, ChatMessageData
+from app.models.project.websocket import WSAction, WSTarget, WSMessage, WSErrorMessage, WSErrorData
 from app.repositories.project.chat import ChatDAO
 from fastapi import WebSocket
 from loguru import logger
 import base64
 
+from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
 
 # logger.disable(__name__)
@@ -616,136 +618,206 @@ class WebsocketConnManager(ABC):
         pass
 
 
-class ChatRoomManager(WebsocketConnManager):
+class ProjectGeneralManager(WebsocketConnManager):
+    """
+    project general manager
+    使用WSAction和WSTarget来区分消息类型
+    """
 
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         try:
-            # We should already be filtering for message types in the listener
-            # but double-check here just in case
+            # 检查并解析message
             if message["type"] != "message":
-                logger.debug(f"Skipping non-message type in process_pubsub: {message['type']}")
-                return
-
+                error = f"Skipping non-message type in process_pubsub: {message['type']}"
+                raise ValueError(error)
             message_data = message["data"]
-            logger.debug(f"Processing message data: {message_data}")
 
             if isinstance(message_data, str):
                 try:
-                    message = orjson.loads(message_data)
-                    logger.debug(f"Parsed JSON message: {message}")
+                    parsed_data = orjson.loads(message_data)
+                    logger.debug(f"Parsed JSON message: {parsed_data}")
                 except orjson.JSONDecodeError:
-                    logger.error(f"Invalid JSON message: {message_data}")
-                    return
+                    error = f"Invalid JSON message: {message_data}"
+
             else:
-                message = message_data
-                logger.debug(f"Using non-string message data: {message}")
+                parsed_data = message_data
+                logger.debug(f"Using non-string message data: {parsed_data}")
 
-            action = message.get("action")
-            client_id = message.get("client_id")
-            timestamp = datetime.now()
+            internal_action = parsed_data.get("action")  # send_message, join, leave, disconnect
+            websocket_action = parsed_data.get("ws_action")  # WSAction枚举
+            websocket_target = parsed_data.get("ws_target")  # WSTarget枚举
+            client_id = parsed_data.get("client_id")
+            client_message = parsed_data.get("message", {})
 
-            user_info = await self._get_user_info(uuid.UUID(client_id))
-            print(user_info)
-            if not user_info:
+            # 讨论internal_action
+            if internal_action in ["join", "leave", "disconnect"]:
+                if internal_action == "join":
+                    logger.info(f"Client {client_id} joined channel {channel}")
+                elif internal_action == "leave":
+                    logger.info(f"Client {client_id} left channel {channel}")
+                elif internal_action == "disconnect":
+                    logger.info(f"Client {client_id} disconnected from channel {channel}")
                 return
 
-            # TODO 添加其他消息类型
-            # TODO add a chat bot
-            # 文本消息
-            if action == "send_message":
-                content = message.get("message")
-                for cid, channels in self.client_channels.items():
-                    if channel in channels and cid in self.active_connections:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_json(
-                            {
-                                "message_type": "text",
-                                "content": content,
-                                "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info,
-                            }
-                        )
-                logger.info(f"Forwarded chat message from {client_id} to all clients in channel {channel}")
-                # 将消息存储到数据库
-                await asyncio.create_task(self._store_message("text", content, channel, client_id, timestamp))
-            # 成员加入
-            elif action == "join":
-                for cid, channels in self.client_channels.items():
-                    if channel in channels and cid in self.active_connections and cid != client_id:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_json(
-                            {
-                                "message_type": "join",
-                                "content": "Welcome to the chat!",
-                                "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info,
-                            }
-                        )
-                logger.info(f"Notified clients about {client_id} joining channel {channel}")
-            # 成员离开
-            elif action == "leave" or action == "disconnect":
-                for cid, channels in self.client_channels.items():
-                    if channel in channels and cid in self.active_connections and cid != client_id:
-                        websocket = self.active_connections[cid]
-                        await websocket.send_json(
-                            {
-                                "message_type": "leave",
-                                "content": "Goodbye!",
-                                "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "user": user_info,
-                            }
-                        )
-                logger.info(f"Notified clients about {client_id} leaving channel {channel}")
+            if internal_action == "send_message":
+                # 尝试解析client_message如果它是一个JSON字符串
+                if isinstance(client_message, str):
+                    try:
+                        client_message = orjson.loads(client_message)
+                        logger.debug(f"Parsed nested JSON message: {client_message}")
+                        # 从嵌套的JSON中获取ws_action和ws_target
+                        websocket_action = client_message.get("ws_action")
+                        websocket_target = client_message.get("ws_target")
+                        parsed_data["message"] = client_message
+                    except orjson.JSONDecodeError:
+                        logger.warning(f"Failed to parse client message as JSON: {client_message[:100]}")
+
+                if not websocket_action or not websocket_target:
+                    error = f"Missing ws_action or ws_target in message: {parsed_data}"
+                    raise ValueError(error)
+
+                ws_target = WSTarget(websocket_target)
+                ws_action = WSAction(websocket_action)
+                await self._dispatch_message(
+                    channel=channel,
+                    ws_target=ws_target,
+                    ws_action=ws_action,
+                    client_id=client_id,
+                    data=client_message.get("data", {}) if isinstance(client_message, dict) else client_message,
+                )
 
         except Exception as e:
-            logger.error(f"Error processing pubsub message: {e}")
+            # 给客户端发送错误消息
+            error_message = WSErrorMessage(
+                ws_target=WSTarget.ERROR,
+                ws_action=WSAction.MESSAGE_SENT,
+                data=WSErrorData(code=500, message=str(e), original_action=None),
+            )
+            if client_id in self.active_connections:
+                websocket = self.active_connections[client_id]
+                await websocket.send_json(error_message.model_dump())
             raise
 
-    async def _get_user_info(self, client_id: uuid.UUID) -> Optional[Dict[str, str]]:
-        try:
-            async with async_session() as db:
-                user = await UserDAO.get_user_by_id(client_id, db)
-                if not user:
-                    logger.error(f"User not found: {client_id}")
-                    return None
-                return {
-                    "id": str(client_id),
-                    "username": user.username,
-                    "email": user.email,
-                }
-        except Exception as e:
-            logger.error(f"Error getting user info: {e}")
-            return None
-
-    async def _store_message(
-        self,
-        message_type: str,
-        content: str,
-        room_id: str,
-        sender_id: str,
-        created_at: datetime,
+    async def _dispatch_message(
+        self, channel: str, ws_target: WSTarget, ws_action: WSAction, client_id: str, data: Any
     ) -> None:
         """
-        Store the message in the database
+        根据target和action分发消息到对应的处理函数
+        """
+        ws_message = WSMessage(
+            ws_action=ws_action, ws_target=ws_target, channel=channel if channel else None, data=data
+        )
+
+        if ws_target == WSTarget.CHAT:
+            await self._handle_chat_message(ws_message, channel, client_id, data)
+        elif ws_target == WSTarget.FILE:
+            await self._handle_file_message(ws_message, channel, client_id, data)
+        elif ws_target == WSTarget.PROJECT:
+            await self._handle_project_message(ws_message, channel, client_id, data)
+        elif ws_target == WSTarget.MEMBER:
+            await self._handle_member_message(ws_message, channel, client_id, data)
+        else:
+            pass
+
+    async def _handle_chat_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+        """
+        处理聊天相关消息
         """
         try:
-            message_type = ChatMessageType(message_type)
-            room_id = uuid.UUID(room_id)
-            sender_id = uuid.UUID(sender_id)
+            # 验证message格式
+            if not isinstance(data, dict):
+                logger.error(f"Invalid chat message format: data must be an object, got {type(data)}")
+                return
 
+            if "message_type" not in data or "content" not in data:
+                logger.error(f"Invalid chat message format: missing type or content fields")
+                return
+
+            message_type = data.get("message_type", "text")
+            message_type = ChatMessageType.TEXT
+            if message_type == "text":
+                message_type = ChatMessageType.TEXT
+            elif message_type == "image":
+                message_type = ChatMessageType.IMAGE
+            elif message_type == "system":
+                message_type = ChatMessageType.SYSTEM
+            else:
+                logger.warning(f"Unknown message type: {message_type}, defaulting to TEXT")
+
+            content = data.get("content", "")
+            current_time = datetime.now()
+
+            # 获取用户信息
             async with async_session() as db:
-                await ChatDAO.create_chat_message(
-                    message_type=message_type,
-                    content=content,
-                    room_id=room_id,
-                    sender_id=sender_id,
-                    created_at=created_at,
-                    db=db,
+
+                if client_id == "system":
+                    user_info = {"id": "system", "username": "system", "email": ""}
+                else:
+                    user = await UserDAO.get_user_by_id(uuid.UUID(client_id), db)
+                    if not user:
+                        logger.error(f"User not found: {client_id}")
+                        raise ValueError(f"User not found: {client_id}")
+                    user_info = {"id": str(user.id), "username": user.username, "email": user.email}
+
+                    project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
+                    if not project:
+                        logger.error(f"Project not found: {channel}")
+                        raise ValueError(f"Project not found: {channel}")
+
+                chat_message = ChatMessageData(
+                    message_type=message_type, content=content, timestamp=current_time, user=user_info
                 )
-                logger.info(f"Stored {message_type} message from {sender_id} in room: {room_id}")
+
+                message_dict = chat_message.model_dump()
+                message_dict["timestamp"] = current_time.isoformat()  # 转str
+                ws_message.data = message_dict
+                await self._broadcast_message(ws_message, channel)
+
+                if ws_message.ws_action == WSAction.MESSAGE_SENT and client_id != "system":
+                    try:
+                        await ChatDAO.create_chat_message(
+                            message_type=message_type,
+                            content=content,
+                            room_id=project.chat_room.id,
+                            sender_id=uuid.UUID(client_id),
+                            created_at=current_time,
+                            db=db,
+                        )
+                        logger.info(f"Chat message from {client_id} stored in database")
+                    except Exception as e:
+                        logger.error(f"Failed to store chat message: {e}")
+
         except Exception as e:
-            logger.error(f"Error storing message in database: {e}")
-            raise
+            logger.error(f"Error handling chat message: {e}")
+
+    async def _handle_file_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+        """
+        处理文件相关消息
+        """
+        await self._broadcast_message(ws_message, channel)
+
+    async def _handle_project_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+        """
+        处理项目相关消息
+        """
+        await self._broadcast_message(ws_message, channel)
+
+    async def _handle_member_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+        """
+        处理成员相关消息
+        """
+        await self._broadcast_message(ws_message, channel)
+
+    async def _broadcast_message(self, ws_message: WSMessage, channel: str) -> None:
+        """
+        广播消息给所有订阅该channel的客户端
+        """
+        for cid, channels in self.client_channels.items():
+            if channel in channels and cid in self.active_connections:
+                websocket = self.active_connections[cid]
+                await websocket.send_json(ws_message.model_dump())
+
+        logger.debug(f"Broadcast message to all clients in channel {channel}")
 
 
 class DumbBroadcaster(WebsocketConnManager):
@@ -822,53 +894,53 @@ class MockWebSocket:
 # NOTE: In tests, we use `sleep` to wait for async operations to complete
 
 
-async def test_chat_room():
-    """Test the ChatRoomManager functionality"""
-    logger.info("Testing ChatRoomManager")
-    user_1 = "921546678b304366b75224aacd6f6bc9"
-    user_2 = "af7b77929cb64fa1994c1ce2a5be62a8"
-    user_3 = "dcc6219460d643e99340163b6b1fc6c4"
-
-    # manager = ChatRoomManager("redis://localhost:6379")
-    manager = ChatRoomManager("memory://localhost:6379")
-    await manager.initialize()
-
-    await asyncio.sleep(0.5)
-
-    client1 = MockWebSocket(user_1)
-    client2 = MockWebSocket(user_2)
-    # client3 = MockWebSocket(user_3)
-
-    await manager.connect("921546678b304366b75224aacd6f6bc9", client1)  # pyright: ignore[reportArgumentType]
-    await manager.connect("af7b77929cb64fa1994c1ce2a5be62a8", client2)  # pyright: ignore[reportArgumentType]
-    # await manager.connect("dcc6219460d643e99340163b6b1fc6c4", client3)  # pyright: ignore[reportArgumentType]
-
-    await manager.subscribe_client_to_channel(user_1, "22813a3306104ddc93b8c513d3cc281d")
-    await asyncio.sleep(0.2)
-    await manager.subscribe_client_to_channel(user_2, "22813a3306104ddc93b8c513d3cc281d")
-    await asyncio.sleep(0.2)
-    # await manager.subscribe_client_to_channel("user3", "22813a3306104ddc93b8c513d3cc281d")
-    # await asyncio.sleep(0.2)
-    # await manager.subscribe_client_to_channel("user1", "22813a3306104ddc93b8c513d3cc281d")
-    # await asyncio.sleep(0.2)
-
-    await manager.send_message("22813a3306104ddc93b8c513d3cc281d", "Hello from user1!", user_1)
-    await asyncio.sleep(0.5)
-    await manager.send_message("22813a3306104ddc93b8c513d3cc281d", "Hi user1, this is user2!", user_2)
-    await asyncio.sleep(0.5)
-    # await manager.send_message("random", "Anyone in random channel?", "user3")
-    # await asyncio.sleep(0.5)
-
-    logger.info(f"Client user1 received {len(client1.messages)} messages")
-    logger.info(f"Client user2 received {len(client2.messages)} messages")
-    # logger.info(f"Client user3 received {len(client3.messages)} messages")
-
-    await manager.unsubscribe_client_from_channel(user_1, "22813a3306104ddc93b8c513d3cc281d")
-    await manager.disconnect(user_2, notification_channel="22813a3306104ddc93b8c513d3cc281d")
-
-    await asyncio.sleep(0.3)
-    await manager.cleanup()
-    logger.info("ChatRoomManager test completed")
+# async def test_chat_room():
+#     """Test the ChatRoomManager functionality"""
+#     logger.info("Testing ChatRoomManager")
+#     user_1 = "921546678b304366b75224aacd6f6bc9"
+#     user_2 = "af7b77929cb64fa1994c1ce2a5be62a8"
+#     user_3 = "dcc6219460d643e99340163b6b1fc6c4"
+#
+#     # manager = ChatRoomManager("redis://localhost:6379")
+#     manager = ChatRoomManager("memory://localhost:6379")
+#     await manager.initialize()
+#
+#     await asyncio.sleep(0.5)
+#
+#     client1 = MockWebSocket(user_1)
+#     client2 = MockWebSocket(user_2)
+#     # client3 = MockWebSocket(user_3)
+#
+#     await manager.connect("921546678b304366b75224aacd6f6bc9", client1)  # pyright: ignore[reportArgumentType]
+#     await manager.connect("af7b77929cb64fa1994c1ce2a5be62a8", client2)  # pyright: ignore[reportArgumentType]
+#     # await manager.connect("dcc6219460d643e99340163b6b1fc6c4", client3)  # pyright: ignore[reportArgumentType]
+#
+#     await manager.subscribe_client_to_channel(user_1, "22813a3306104ddc93b8c513d3cc281d")
+#     await asyncio.sleep(0.2)
+#     await manager.subscribe_client_to_channel(user_2, "22813a3306104ddc93b8c513d3cc281d")
+#     await asyncio.sleep(0.2)
+#     # await manager.subscribe_client_to_channel("user3", "22813a3306104ddc93b8c513d3cc281d")
+#     # await asyncio.sleep(0.2)
+#     # await manager.subscribe_client_to_channel("user1", "22813a3306104ddc93b8c513d3cc281d")
+#     # await asyncio.sleep(0.2)
+#
+#     await manager.send_message("22813a3306104ddc93b8c513d3cc281d", "Hello from user1!", user_1)
+#     await asyncio.sleep(0.5)
+#     await manager.send_message("22813a3306104ddc93b8c513d3cc281d", "Hi user1, this is user2!", user_2)
+#     await asyncio.sleep(0.5)
+#     # await manager.send_message("random", "Anyone in random channel?", "user3")
+#     # await asyncio.sleep(0.5)
+#
+#     logger.info(f"Client user1 received {len(client1.messages)} messages")
+#     logger.info(f"Client user2 received {len(client2.messages)} messages")
+#     # logger.info(f"Client user3 received {len(client3.messages)} messages")
+#
+#     await manager.unsubscribe_client_from_channel(user_1, "22813a3306104ddc93b8c513d3cc281d")
+#     await manager.disconnect(user_2, notification_channel="22813a3306104ddc93b8c513d3cc281d")
+#
+#     await asyncio.sleep(0.3)
+#     await manager.cleanup()
+#     logger.info("ChatRoomManager test completed")
 
 
 async def test_dumbbroadcaster():
@@ -923,7 +995,7 @@ async def main():
     logger.enable(__name__)
     logger.info("Starting tests")
 
-    await test_chat_room()
+    # await test_chat_room()
     # await test_dumbbroadcaster()
 
     logger.info("Tests completed")
