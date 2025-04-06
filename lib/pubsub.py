@@ -16,7 +16,7 @@ import orjson
 import redis.asyncio as aioredis
 from app.core.db import async_session
 from app.models.project.chat import ChatMessageType, ChatMessageData
-from app.models.project.websocket import WSAction, WSTarget, WSMessage, WSErrorMessage, WSErrorData
+from app.models.project.websocket import EventType, EventScope, ClientMessage, ClientErrorMessage, ClientErrorData
 from app.repositories.project.chat import ChatDAO
 from fastapi import WebSocket
 from loguru import logger
@@ -620,8 +620,8 @@ class WebsocketConnManager(ABC):
 
 class ProjectGeneralManager(WebsocketConnManager):
     """
-    project general manager
-    使用WSAction和WSTarget来区分消息类型
+    Project General Manager
+    使用event_type和event_scope来区分消息类型
     """
 
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
@@ -638,60 +638,58 @@ class ProjectGeneralManager(WebsocketConnManager):
                     logger.debug(f"Parsed JSON message: {parsed_data}")
                 except orjson.JSONDecodeError:
                     error = f"Invalid JSON message: {message_data}"
-
+                    raise ValueError(error)
             else:
                 parsed_data = message_data
                 logger.debug(f"Using non-string message data: {parsed_data}")
 
-            internal_action = parsed_data.get("action")  # send_message, join, leave, disconnect
-            websocket_action = parsed_data.get("ws_action")  # WSAction枚举
-            websocket_target = parsed_data.get("ws_target")  # WSTarget枚举
+            action = parsed_data.get("action")
             client_id = parsed_data.get("client_id")
             client_message = parsed_data.get("message", {})
 
-            # 讨论internal_action
-            if internal_action in ["join", "leave", "disconnect"]:
-                if internal_action == "join":
+            # 处理action
+            if action in ["join", "leave", "disconnect"]:
+                if action == "join":
                     logger.info(f"Client {client_id} joined channel {channel}")
-                elif internal_action == "leave":
+                elif action == "leave":
                     logger.info(f"Client {client_id} left channel {channel}")
-                elif internal_action == "disconnect":
+                elif action == "disconnect":
                     logger.info(f"Client {client_id} disconnected from channel {channel}")
                 return
 
-            if internal_action == "send_message":
-                # 尝试解析client_message如果它是一个JSON字符串
+            if action == "send_message":
+                # 解析client_message
+                logger.info(f"Client Message Type: {type(client_message)}")
                 if isinstance(client_message, str):
                     try:
                         client_message = orjson.loads(client_message)
                         logger.debug(f"Parsed nested JSON message: {client_message}")
-                        # 从嵌套的JSON中获取ws_action和ws_target
-                        websocket_action = client_message.get("ws_action")
-                        websocket_target = client_message.get("ws_target")
-                        parsed_data["message"] = client_message
-                    except orjson.JSONDecodeError:
-                        logger.warning(f"Failed to parse client message as JSON: {client_message[:100]}")
 
-                if not websocket_action or not websocket_target:
-                    error = f"Missing ws_action or ws_target in message: {parsed_data}"
+                        event_type = client_message.get("event_type")  # EventType枚举
+                        event_scope = client_message.get("event_scope")  # EventScope枚举
+                        data = client_message.get("data", {})
+                    except orjson.JSONDecodeError:
+                        error = f"Invalid JSON message: {client_message}"
+                        raise ValueError(error)
+
+                if not event_type or not event_scope or not data:
+                    error = f"Missing event_type or event_scope or data in message: {parsed_data}"
                     raise ValueError(error)
 
-                ws_target = WSTarget(websocket_target)
-                ws_action = WSAction(websocket_action)
+                event_scope = EventScope(event_scope)
+                event_type = EventType(event_type)
                 await self._dispatch_message(
                     channel=channel,
-                    ws_target=ws_target,
-                    ws_action=ws_action,
+                    event_scope=event_scope,
+                    event_type=event_type,
                     client_id=client_id,
-                    data=client_message.get("data", {}) if isinstance(client_message, dict) else client_message,
+                    data=data,
                 )
 
         except Exception as e:
-            # 给客户端发送错误消息
-            error_message = WSErrorMessage(
-                ws_target=WSTarget.ERROR,
-                ws_action=WSAction.MESSAGE_SENT,
-                data=WSErrorData(code=500, message=str(e), original_action=None),
+            logger.error(f"Error in process_pubsub_message: {e}")
+            error_message = ClientErrorMessage(
+                data=ClientErrorData(code=500, message=str(e), original_action=None),
             )
             if client_id in self.active_connections:
                 websocket = self.active_connections[client_id]
@@ -699,116 +697,123 @@ class ProjectGeneralManager(WebsocketConnManager):
             raise
 
     async def _dispatch_message(
-        self, channel: str, ws_target: WSTarget, ws_action: WSAction, client_id: str, data: Any
+        self, event_scope: EventScope, event_type: EventType, channel: str, client_id: str, data: Any
     ) -> None:
         """
-        根据target和action分发消息到对应的处理函数
+        根据event_scope和event_type分发消息到对应的处理函数
         """
-        ws_message = WSMessage(
-            ws_action=ws_action, ws_target=ws_target, channel=channel if channel else None, data=data
-        )
 
-        if ws_target == WSTarget.CHAT:
-            await self._handle_chat_message(ws_message, channel, client_id, data)
-        elif ws_target == WSTarget.FILE:
-            await self._handle_file_message(ws_message, channel, client_id, data)
-        elif ws_target == WSTarget.PROJECT:
-            await self._handle_project_message(ws_message, channel, client_id, data)
-        elif ws_target == WSTarget.MEMBER:
-            await self._handle_member_message(ws_message, channel, client_id, data)
+        if event_scope == EventScope.CHAT:
+            await self._handle_chat_message(event_scope, event_type, channel, client_id, data)
+        elif event_scope == EventScope.FILE:
+            await self._handle_file_message(event_scope, event_type, channel, client_id, data)
+        elif event_scope == EventScope.PROJECT:
+            await self._handle_project_message(event_scope, event_type, channel, client_id, data)
+        elif event_scope == EventScope.MEMBER:
+            await self._handle_member_message(event_scope, event_type, channel, client_id, data)
         else:
             pass
 
-    async def _handle_chat_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+    async def _handle_chat_message(
+        self, event_scope: EventScope, event_type: EventType, channel: str, client_id: str, data: Any
+    ) -> None:
         """
         处理聊天相关消息
         """
         try:
-            # 验证message格式
-            if not isinstance(data, dict):
-                logger.error(f"Invalid chat message format: data must be an object, got {type(data)}")
-                return
+            if event_type == EventType.MESSAGE_SENT:
+                if "message_type" not in data or "content" not in data:
+                    error = f"Invalid chat message format: missing type or content fields"
+                    raise ValueError(error)
+                message_type = data.get("message_type", "text")
+                content = data.get("content", "")
+                current_time = datetime.now()
 
-            if "message_type" not in data or "content" not in data:
-                logger.error(f"Invalid chat message format: missing type or content fields")
-                return
-
-            message_type = data.get("message_type", "text")
-            message_type = ChatMessageType.TEXT
-            if message_type == "text":
                 message_type = ChatMessageType.TEXT
-            elif message_type == "image":
-                message_type = ChatMessageType.IMAGE
-            elif message_type == "system":
-                message_type = ChatMessageType.SYSTEM
-            else:
-                logger.warning(f"Unknown message type: {message_type}, defaulting to TEXT")
-
-            content = data.get("content", "")
-            current_time = datetime.now()
-
-            # 获取用户信息
-            async with async_session() as db:
-
-                if client_id == "system":
-                    user_info = {"id": "system", "username": "system", "email": ""}
+                if message_type == "text":
+                    message_type = ChatMessageType.TEXT
+                elif message_type == "image":
+                    message_type = ChatMessageType.IMAGE
+                elif message_type == "system":
+                    message_type = ChatMessageType.SYSTEM
                 else:
-                    user = await UserDAO.get_user_by_id(uuid.UUID(client_id), db)
-                    if not user:
-                        logger.error(f"User not found: {client_id}")
-                        raise ValueError(f"User not found: {client_id}")
-                    user_info = {"id": str(user.id), "username": user.username, "email": user.email}
+                    error = f"Unknown message type: {message_type}, defaulting to TEXT"
+                    raise ValueError(error)
 
-                    project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
-                    if not project:
-                        logger.error(f"Project not found: {channel}")
-                        raise ValueError(f"Project not found: {channel}")
+                # 获取用户信息
+                async with async_session() as db:
 
-                chat_message = ChatMessageData(
-                    message_type=message_type, content=content, timestamp=current_time, user=user_info
-                )
+                    if client_id == "system":
+                        user_info = {"id": "system", "username": "system", "email": ""}
+                    else:
+                        user = await UserDAO.get_user_by_id(uuid.UUID(client_id), db)
+                        if not user:
+                            error = f"User not found: {client_id}"
+                            raise ValueError(error)
+                        user_info = {"id": str(user.id), "username": user.username, "email": user.email}
 
-                message_dict = chat_message.model_dump()
-                message_dict["timestamp"] = current_time.isoformat()  # 转str
-                ws_message.data = message_dict
-                await self._broadcast_message(ws_message, channel)
+                        project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
+                        if not project:
+                            error = f"Project not found: {channel}"
+                            raise ValueError(error)
 
-                if ws_message.ws_action == WSAction.MESSAGE_SENT and client_id != "system":
-                    try:
-                        await ChatDAO.create_chat_message(
-                            message_type=message_type,
-                            content=content,
-                            room_id=project.chat_room.id,
-                            sender_id=uuid.UUID(client_id),
-                            created_at=current_time,
-                            db=db,
-                        )
-                        logger.info(f"Chat message from {client_id} stored in database")
-                    except Exception as e:
-                        logger.error(f"Failed to store chat message: {e}")
+                    chat_message = ChatMessageData(
+                        message_type=message_type, content=content, timestamp=current_time, user=user_info
+                    )
+
+                    message_dict = chat_message.model_dump()
+                    message_dict["timestamp"] = current_time.isoformat()  # 转str
+
+                    client_message = ClientMessage(
+                        event_type=event_type,
+                        event_scope=event_scope,
+                        channel=channel,
+                        data=message_dict,
+                        client_id=client_id,
+                    )
+                    await self._broadcast_message(client_message, channel)
+
+                    # 保存消息到数据库
+                    if client_id != "system":
+                        try:
+                            await ChatDAO.create_chat_message(
+                                message_type=message_type,
+                                content=content,
+                                room_id=project.chat_room.id,
+                                sender_id=uuid.UUID(client_id),
+                                created_at=current_time,
+                                db=db,
+                            )
+                            logger.info(f"Chat message from {client_id} stored in database")
+                        except Exception as e:
+                            error = f"Failed to store chat message: {e}"
+                            raise ValueError(error)
 
         except Exception as e:
             logger.error(f"Error handling chat message: {e}")
+            raise
 
-    async def _handle_file_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+    async def _handle_file_message(self, event_scope: EventScope, event_type: EventType, channel: str, client_id: str, data: Any) -> None:
         """
         处理文件相关消息
         """
-        await self._broadcast_message(ws_message, channel)
+        pass
 
-    async def _handle_project_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+    async def _handle_project_message(self, event_scope: EventScope, event_type: EventType, channel: str, client_id: str, data: Any) -> None:
         """
         处理项目相关消息
         """
-        await self._broadcast_message(ws_message, channel)
+        pass
 
-    async def _handle_member_message(self, ws_message: WSMessage, channel: str, client_id: str, data: Any) -> None:
+    async def _handle_member_message(
+        self, event_scope: EventScope, event_type: EventType, channel: str, client_id: str, data: Any
+    ) -> None:
         """
         处理成员相关消息
         """
-        await self._broadcast_message(ws_message, channel)
+        pass
 
-    async def _broadcast_message(self, ws_message: WSMessage, channel: str) -> None:
+    async def _broadcast_message(self, ws_message: ClientMessage, channel: str) -> None:
         """
         广播消息给所有订阅该channel的客户端
         """

@@ -1,12 +1,18 @@
 from enum import Enum
 from typing import Any, Dict, Optional
-from uuid import UUID
 
 from app.models.base import Base
 
 
-class WSTarget(str, Enum):
-    """WebSocket target"""
+class EventScope(str, Enum):
+    """
+    事件范围
+    - project: 项目
+    - member: 成员
+    - file: 文件
+    - chat: 聊天
+    - error: 错误
+    """
 
     PROJECT = "project"
     MEMBER = "member"
@@ -15,8 +21,8 @@ class WSTarget(str, Enum):
     ERROR = "error"
 
 
-class WSAction(str, Enum):
-    """WebSocket action"""
+class EventType(str, Enum):
+    """事件类型"""
 
     # 项目相关
     PROJECT_UPDATED = "project_updated"
@@ -41,7 +47,7 @@ class WSAction(str, Enum):
     MESSAGE_WITHDRAWN = "message_withdrawn"
 
 
-class WSErrorData(Base):
+class ClientErrorData(Base):
     """错误数据模型"""
 
     code: int
@@ -49,17 +55,19 @@ class WSErrorData(Base):
     original_action: Optional[str] = None  # 原始action
 
 
-class WSMessage(Base):
+class ClientMessage(Base):
     """WebSocket消息基础模型"""
 
-    ws_action: Optional[WSAction]
-    ws_target: Optional[WSTarget]
+    event_type: Optional[EventType]
+    event_scope: Optional[EventScope]
     channel: Optional[str] = None
+    client_id: Optional[str] = None
     data: Dict[str, Any]
 
 
-class WSErrorMessage(WSMessage):
+class ClientErrorMessage(ClientMessage):
     """错误消息模型"""
 
-    ws_target: WSTarget = WSTarget.ERROR
-    data: WSErrorData
+    event_scope: EventScope = EventScope.ERROR
+    event_type: None = None
+    data: ClientErrorData
