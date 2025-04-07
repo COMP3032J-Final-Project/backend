@@ -33,7 +33,7 @@ async def list_files(
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
     files = await ProjectDAO.get_files(project=current_project, db=db)
-    files = [file for file in files if file.status == FileStatus.UPLOADED]
+    # files = [file for file in files if file.status == FileStatus.UPLOADED]
     return APIResponse(code=200, data=files, msg="success")
 
 
@@ -51,8 +51,8 @@ async def get_file_download_url(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
-    if current_file.status != FileStatus.UPLOADED:
-        raise HTTPException(status_code=404, detail="File not found")
+    # if current_file.status != FileStatus.UPLOADED:
+    #     raise HTTPException(status_code=404, detail="File not found")
     if current_file.filetype == FileType.FOLDER:
         raise HTTPException(status_code=400, detail="Folder cannot be downloaded")
 

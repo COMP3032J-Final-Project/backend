@@ -62,7 +62,8 @@ class FileDAO:
         """
         获取项目中状态为pending的文件
         """
-        query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
+        query = select(File).where(File.project_id == project_id)
+        # query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
         result = await db.execute(query)
         return result.scalars().all()
 
