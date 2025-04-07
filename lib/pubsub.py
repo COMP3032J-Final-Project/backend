@@ -626,19 +626,21 @@ class ProjectGeneralManager(WebsocketConnManager):
 
     def __init__(self, url: Optional[str] = None, **kwargs):
         super().__init__(url, **kwargs)
-        
+
         # 中介
         self.mediator = ClientMessageMediator(self)
 
         # 处理器
         self.chat_handler = ChatHandler(self.mediator)
+        self.project_handler = ProjectHandler(self.mediator)
 
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         try:
             # 检查并解析message
             if message["type"] != "message":
-                error = f"Skipping non-message type in process_pubsub: {message['type']}"
-                raise ValueError(error)
+                logger.error(f"Skipping non-message type in process_pubsub: {message['type']}")
+                return
+
             message_data = message["data"]
 
             if isinstance(message_data, str):
@@ -646,8 +648,8 @@ class ProjectGeneralManager(WebsocketConnManager):
                     parsed_data = orjson.loads(message_data)
                     logger.debug(f"Parsed JSON message: {parsed_data}")
                 except orjson.JSONDecodeError:
-                    error = f"Invalid JSON message: {message_data}"
-                    raise ValueError(error)
+                    logger.error(f"Invalid JSON message: {message_data}")
+                    return
             else:
                 parsed_data = message_data
                 logger.debug(f"Using non-string message data: {parsed_data}")
@@ -673,31 +675,32 @@ class ProjectGeneralManager(WebsocketConnManager):
                     try:
                         client_message = orjson.loads(client_message)
                         logger.debug(f"Parsed nested JSON message: {client_message}")
-
-                        event_type = client_message.get("event_type")  # EventType枚举
-                        event_scope = client_message.get("event_scope")  # EventScope枚举
-                        data = client_message.get("data", {})
                     except orjson.JSONDecodeError:
-                        error = f"Invalid JSON message: {client_message}"
-                        raise ValueError(error)
+                        logger.error(f"Invalid JSON message: {client_message}")
+                        return
+
+                event_type = client_message.get("event_type")  # EventType枚举
+                event_scope = client_message.get("event_scope")  # EventScope枚举
+                data = client_message.get("data", {})
 
                 if not event_type or not event_scope or not data:
-                    error = f"Missing event_type or event_scope or data in message: {parsed_data}"
-                    raise ValueError(error)
+                    logger.error(f"Missing event_type or event_scope or data in message: {parsed_data}")
+                    return
 
-                # 分发消息
-                event_scope = EventScope(event_scope)
-                event_type = EventType(event_type)
-                await self.mediator.dispatch_message(channel, event_scope, event_type, client_id, data)
+                try:
+                    # 分发消息
+                    event_scope = EventScope(event_scope)
+                    event_type = EventType(event_type)
+                    await self.mediator.dispatch_message(channel, event_scope, event_type, client_id, data)
+                except ValueError as e:
+                    logger.error(f"Invalid event_type or event_scope: {e}")
+                    return
+                except Exception as e:
+                    logger.error(f"Error dispatching message: {e}")
+                    return
 
         except Exception as e:
             logger.error(f"Error in process_pubsub_message: {e}")
-            error_message = ClientErrorMessage(
-                data=ClientErrorData(code=500, message=str(e), original_action=None),
-            )
-            if client_id in self.active_connections:
-                websocket = self.active_connections[client_id]
-                await websocket.send_json(error_message.model_dump())
             raise
 
 
@@ -734,7 +737,7 @@ class ClientMessageMediator:
         logger.debug(f"Broadcast message to all clients in channel {channel}")
 
 
-class MessageHandler(ABC):
+class ClientMessageHandler(ABC):
     """
     消息处理基类
     """
@@ -751,7 +754,7 @@ class MessageHandler(ABC):
         await self.mediator.broadcast_message(client_message, channel)
 
 
-class ChatHandler(MessageHandler):
+class ChatHandler(ClientMessageHandler):
     def _register_handlers(self):
         self.mediator.register_handler(EventScope.CHAT, EventType.MESSAGE_SENT, self.handle_message_sent)
         # TODO 添加其他message_type
@@ -763,30 +766,11 @@ class ChatHandler(MessageHandler):
         处理发送消息事件
         """
         try:
-            # 验证消息格式
-            if not isinstance(data, dict):
-                logger.error(f"Invalid chat message format: data must be an object, got {type(data)}")
-                raise ValueError(f"Invalid chat message format: data must be an object")
-
-            if "message_type" not in data or "content" not in data:
-                logger.error(f"Invalid chat message format: missing type or content fields")
-                raise ValueError(f"Invalid chat message format: missing required fields")
-
             # 提取消息数据
-            message_type_str = data.get("message_type", "text")
+            message_type = data.get("message_type", "text")
+            message_type = ChatMessageType(message_type)
             content = data.get("content", "")
             current_time = datetime.now()
-
-            # 转换消息类型
-            if message_type_str == "text":
-                message_type = ChatMessageType.TEXT
-            elif message_type_str == "image":
-                message_type = ChatMessageType.IMAGE
-            elif message_type_str == "system":
-                message_type = ChatMessageType.SYSTEM
-            else:
-                logger.warning(f"Unknown message type: {message_type_str}, defaulting to TEXT")
-                message_type = ChatMessageType.TEXT
 
             # 获取用户信息和项目信息
             async with async_session() as db:
@@ -811,7 +795,6 @@ class ChatHandler(MessageHandler):
                     message_type=message_type, content=content, timestamp=current_time, user=user_info
                 )
 
-                # 准备广播消息
                 message_dict = chat_message.model_dump()
                 message_dict["timestamp"] = current_time.isoformat()  # 转str
 
@@ -845,6 +828,22 @@ class ChatHandler(MessageHandler):
         except Exception as e:
             logger.error(f"Error handling chat message: {e}")
             raise
+
+
+class ProjectHandler(ClientMessageHandler):
+    def _register_handlers(self):
+        self.mediator.register_handler(EventScope.PROJECT, EventType.PROJECT_UPDATED, self.handle_project_updated)
+        self.mediator.register_handler(EventScope.PROJECT, EventType.PROJECT_DELETED, self.handle_project_deleted)
+
+    async def handle_project_updated(
+        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+    ):
+        pass
+
+    async def handle_project_deleted(
+        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+    ):
+        pass
 
 
 class DumbBroadcaster(WebsocketConnManager):
