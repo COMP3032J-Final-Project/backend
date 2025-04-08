@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from .project import Project
 
 
-class FileCreate(Base):
+class FileCreateUpdate(Base):
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
 

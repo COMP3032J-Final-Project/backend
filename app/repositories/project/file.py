@@ -7,7 +7,7 @@ from typing import List, Optional
 import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.project.file import File, FileCreate  # , FileStatus
+from app.models.project.file import File, FileCreateUpdate  # , FileStatus
 from app.models.project.project import Project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,11 +26,27 @@ def force_posix(path: str) -> str:
 class FileDAO:
 
     @staticmethod
-    def rename_file(file: File, db: AsyncSession) -> str:
+    async def rename_file(file_id: uuid.UUID, file_create_update: FileCreateUpdate, db: AsyncSession) -> file:
         """
         注意！注意！注意！
-        该操作有非常复杂的副作用，请务必谨慎考虑
+        该操作（目前）有非常复杂的副作用，请务必谨慎考虑！！
+        Notes
+        -----
+        该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
+        对远程资源的更改，包括此前生成的临时URL，仍然指向远程资源！
         """
+        file = await FileDAO.get_file_by_id(file_id=file_id)
+        file.filename = file_create_update.filename
+        file.filepath = file_create_update.filepath
+
+        await db.add(current_file)
+        await db.commit()
+        await db.refresh(file)
+
+        return file
+
+    # @staticmethod
+    # def copy_file_r2(file: File, new_file: File, db: AsyncSession) -> File:
 
     @staticmethod
     def get_temp_file_path(file: File) -> str:
@@ -61,13 +77,13 @@ class FileDAO:
         return result.scalars().first()
 
     @staticmethod
-    async def create_file_in_db(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
+    async def create_file_in_db(file_create_update: FileCreateUpdate, project: Project, db: AsyncSession) -> File:
         """
         创建db文件
         """
         file = File(
-            filename=file_create.filename,
-            filepath=file_create.filepath,
+            filename=file_create_update.filename,
+            filepath=file_create_update.filepath,
             project_id=project.id,
         )
         db.add(file)
