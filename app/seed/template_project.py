@@ -3,7 +3,7 @@ import logging
 import os
 
 from app.core.config import settings
-from app.models.project.file import FileCreate
+from app.models.project.file import FileCreateUpdate
 from app.models.project.project import (ProjectCreate, ProjectPermission,
                                         ProjectType)
 from app.repositories.project.chat import ChatDAO
@@ -46,7 +46,7 @@ async def create_template_projects(db: AsyncSession) -> None:
             await FileDAO.delete_file_in_db(file=file, db=db)
 
         # delete any file from remote storage
-        for key in await FileDAO.list_project_r2_keys(project_id=template_project.id):
+        for key in FileDAO.list_project_r2_keys(project_id=template_project.id):
             await FileDAO.delete_key_from_r2(key=key)
 
         # this rests both local and remote to a "clean-slate"
@@ -57,7 +57,7 @@ async def create_template_projects(db: AsyncSession) -> None:
 
             head, tail = os.path.split(relpath)
             file = await FileDAO.create_file_in_db(
-                file_create=FileCreate(filename=tail, filepath=head),
+                file_create_update=FileCreateUpdate(filename=tail, filepath=head),
                 project=template_project,
                 db=db,
             )

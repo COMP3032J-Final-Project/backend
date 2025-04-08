@@ -5,8 +5,8 @@ from typing import Annotated
 from app.api.deps import (get_current_file, get_current_project,
                           get_current_user, get_db)
 from app.models.base import APIResponse
-from app.models.project.file import (File, FileCreate, FileUploadResponse,
-                                     FileURL)
+from app.models.project.file import (File, FileCreateUpdate,
+                                     FileUploadResponse, FileURL)
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
@@ -62,11 +62,11 @@ async def get_file_download_url(
 
 @router.post("/create", response_model=APIResponse[File])
 async def create_file(
-    file_create: FileCreate,
+    file_create: FileCreateUpdate,
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
-    new_file = await FileDAO.create_file_in_db(file_create=file_create, project=current_project, db=db)
+    new_file = await FileDAO.create_file_in_db(file_create_update=file_create, project=current_project, db=db)
     return APIResponse(code=200, data=new_file, msg="success")
 
 
@@ -99,7 +99,7 @@ async def delete_file(
 
 @router.post("/upload-url", response_model=APIResponse[FileUploadResponse])
 async def get_file_upload_url(
-    file_create: FileCreate,
+    file_create: FileCreateUpdate,
     current_project: Annotated[Project, Depends(get_current_project)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -120,13 +120,8 @@ async def get_file_upload_url(
 
     # 仅文件类型上传URL
     url = None
-    # if file_create.filetype == FileType.FILE:
     new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
     url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
-    # elif file_create.filetype == FileType.FOLDER:
-    #     new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
-    # new_file.status = FileStatus.UPLOADED
-
     response_data = FileUploadResponse(file_id=new_file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
 
@@ -150,11 +145,8 @@ async def confirm_file_upload(
     # 检查文件是否存在于R2
     is_exists = await FileDAO.check_file_in_r2(current_file)
     if is_exists:
-        # await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.UPLOADED), db)
         return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
     else:
-        # TODO 处理文件未上传的情况
-        # await FileDAO.update_file_in_db(current_file, FileUpdate(status=FileStatus.FAILED), db)
         pass
 
     raise HTTPException(status_code=404, detail="File not uploaded to R2")

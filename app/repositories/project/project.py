@@ -1,23 +1,15 @@
 import uuid
 from typing import Optional
 
-from app.models.project.file import File, FileCreate
-from app.models.project.project import (
-    OwnerInfo,
-    Project,
-    ProjectCreate,
-    ProjectInfo,
-    ProjectPermission,
-    ProjectUpdate,
-    ProjectUser,
-)
+from app.models.project.file import File, FileCreateUpdate
+from app.models.project.project import (OwnerInfo, Project, ProjectCreate,
+                                        ProjectInfo, ProjectPermission,
+                                        ProjectUpdate, ProjectUser)
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-from app.repositories.project.file import FileDAO
 
 
 class ProjectDAO:
@@ -274,7 +266,7 @@ class ProjectDAO:
         # 复制文件
         for template_file in template_files:
             new_file = await FileDAO.create_file_in_db(
-                file_create=FileCreate(
+                file_create=FileCreateUpdate(
                     filename=template_file.filename,
                     filepath=template_file.filepath,
                     filetype=template_file.filetype,

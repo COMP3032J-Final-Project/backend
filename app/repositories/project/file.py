@@ -7,7 +7,7 @@ from typing import List, Optional
 import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.project.file import File, FileCreateUpdate  # , FileStatus
+from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,27 +26,35 @@ def force_posix(path: str) -> str:
 class FileDAO:
 
     @staticmethod
-    async def rename_file(file_id: uuid.UUID, file_create_update: FileCreateUpdate, db: AsyncSession) -> file:
+    async def rename_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
         """
-        注意！注意！注意！
-        该操作（目前）有非常复杂的副作用，请务必谨慎考虑！！
         Notes
         -----
         该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
-        对远程资源的更改，包括此前生成的临时URL，仍然指向远程资源！
         """
-        file = await FileDAO.get_file_by_id(file_id=file_id)
         file.filename = file_create_update.filename
         file.filepath = file_create_update.filepath
 
-        await db.add(current_file)
+        await db.add(file)
         await db.commit()
         await db.refresh(file)
 
         return file
 
-    # @staticmethod
-    # def copy_file_r2(file: File, new_file: File, db: AsyncSession) -> File:
+    @staticmethod
+    def copy_file_r2(source_file: File, target_file: File, db: AsyncSession):
+        """
+        将source_file对应的r2资源复制到target_file
+
+        Notes
+        -----
+        失败无反馈
+        """
+        r2client.copy(
+            {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
+            Bucket=settings.R2_BUCKET,
+            Key=FileDAO.get_remote_file_path(file=target_file),
+        )
 
     @staticmethod
     def get_temp_file_path(file: File) -> str:
@@ -105,7 +113,7 @@ class FileDAO:
         从R2中删除文件
         """
         try:
-            if not await FileDAO.check_file_in_r2(file):
+            if not await FileDAO.check_file_exist_in_r2(file):
                 return False
 
             r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
@@ -170,17 +178,18 @@ class FileDAO:
         return url
 
     @staticmethod
-    async def check_file_in_r2(file: File) -> bool:
+    async def check_file_exist_in_r2(file: File) -> bool:
         """
-        检查文件是否在R2中存在
+        检查文件对应的远程资源是否在R2中存在
         """
         try:
             r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file=file))
-            return True
         except botocore.exceptions.ClientError as e:
             if e.response["Error"]["Code"] == "404":
                 return False
             raise
+        else:
+            return True
 
     @staticmethod
     async def push_file_to_r2(file: File, localpath: str = "") -> None:
@@ -211,7 +220,7 @@ class FileDAO:
             logger.error(error)
 
     @staticmethod
-    async def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
+    def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
         """
         R2 key = 远程文件夹+远程文件名
         """
@@ -233,8 +242,8 @@ class FileDAO:
         return contents
 
     @staticmethod
-    async def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
+    def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
         """
         拉取某一特定project对应的文件
         """
-        return await FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))
+        return FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))
