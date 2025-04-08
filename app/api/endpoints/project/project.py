@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, List
 
 from loguru import logger
@@ -147,6 +148,23 @@ async def delete_projects(
     for project_id in project_ids:
         project = await ProjectDAO.get_project_by_id(project_id, db)
         await ProjectDAO.delete_project(project, db)
+
+    # # 向被删除的全部项目发送广播
+    # try:
+    #     for project_id in project_ids:
+    #         await asyncio.sleep(5)
+    #         channel = str(project_id)
+    #         deleted_message = {
+    #             "event_scope": EventScope.PROJECT,
+    #             "event_type": EventType.PROJECT_DELETED,
+    #             "data": {
+    #                 "project_id": str(project_id),
+    #             },
+    #         }
+    #         await project_general_manager.publish_message(channel, deleted_message)
+
+    # except Exception as e:
+    #     logger.error(f"Failed to broadcast project deletion: {str(e)}")
 
     return APIResponse(code=200, msg="Projects deleted")
 
