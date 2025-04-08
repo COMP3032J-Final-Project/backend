@@ -33,7 +33,8 @@ async def create_template_projects(db: AsyncSession) -> None:
             if project.name == project_name:
                 template_project = project
                 break
-        else:
+        else:  # for...else 中 else 只在没有break后运行
+            """this is only executed on empty db"""
             pc = ProjectCreate(name=project_name, type=ProjectType.TEMPLATE)
             template_project = await ProjectDAO.create_project(project_create=pc, db=db)
             await ProjectDAO.add_member(
@@ -41,11 +42,14 @@ async def create_template_projects(db: AsyncSession) -> None:
             )
             await ChatDAO.create_chat_room(name=pc.name, project_id=template_project.id, db=db)
 
-        # delete file currently associated with the Project instance.
+        """ below this is executed everytime on startup
+            假设：服务不经常重启
+        """
+        # delete file currently associated with the Project instance in database.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
             await FileDAO.delete_file_in_db(file=file, db=db)
 
-        # delete any file from remote storage
+        # delete any file from remote storage (r2)
         for key in FileDAO.list_project_r2_keys(project_id=template_project.id):
             await FileDAO.delete_key_from_r2(key=key)
 
@@ -54,12 +58,8 @@ async def create_template_projects(db: AsyncSession) -> None:
         relpaths = [Path(filepath).relative_to(os.path.join("templates", folder.name, "")) for filepath in filepaths]
 
         for filepath, relpath in zip(filepaths, relpaths):
-
             head, tail = os.path.split(relpath)
             file = await FileDAO.create_file_in_db(
-                file_create_update=FileCreateUpdate(filename=tail, filepath=head),
-                project=template_project,
-                db=db,
+                file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
             )
-
             await FileDAO.push_file_to_r2(file=file, localpath=filepath)

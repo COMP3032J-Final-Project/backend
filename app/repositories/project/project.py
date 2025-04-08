@@ -14,27 +14,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 class ProjectDAO:
     @staticmethod
-    async def get_project_by_id(
-        project_id: uuid.UUID,
-        db: AsyncSession,
-    ) -> Optional[Project]:
+    async def get_project_by_id(project_id: uuid.UUID, db: AsyncSession) -> Optional[Project]:
         return await db.get(Project, project_id)
 
     @staticmethod
-    async def get_project_by_name(
-        project_name: str,
-        db: AsyncSession,
-    ) -> Optional[Project]:
+    async def get_project_by_name(project_name: str, db: AsyncSession) -> Optional[Project]:
         """临时DAO demo用完即焚"""
         query = select(Project).where(Project.name == project_name)
         result = await db.execute(query)
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_projects(
-        user: User,
-        db: AsyncSession,
-    ) -> list[Project]:
+    async def get_projects(user: User, db: AsyncSession) -> list[Project]:
         """
         获取当前用户的所有项目
         """
@@ -43,10 +34,7 @@ class ProjectDAO:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_project_info(
-        project: Project,
-        db: AsyncSession,
-    ) -> ProjectInfo:
+    async def get_project_info(project: Project, db: AsyncSession) -> ProjectInfo:
         """
         包装项目信息
         """
@@ -60,10 +48,7 @@ class ProjectDAO:
         return project_info
 
     @staticmethod
-    async def create_project(
-        project_create: ProjectCreate,
-        db: AsyncSession,
-    ) -> Project:
+    async def create_project(project_create: ProjectCreate, db: AsyncSession) -> Project:
         project = Project(
             name=project_create.name,
             type=project_create.type,
@@ -74,11 +59,7 @@ class ProjectDAO:
         return project
 
     @staticmethod
-    async def update_project(
-        project: Project,
-        project_update: ProjectUpdate,
-        db: AsyncSession,
-    ) -> Optional[Project]:
+    async def update_project(project: Project, project_update: ProjectUpdate, db: AsyncSession) -> Optional[Project]:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
         for field in update_data:
             setattr(project, field, update_data[field])
@@ -91,18 +72,12 @@ class ProjectDAO:
         return project
 
     @staticmethod
-    async def delete_project(
-        project: Project,
-        db: AsyncSession,
-    ) -> None:
+    async def delete_project(project: Project, db: AsyncSession) -> None:
         await db.delete(project)
         await db.commit()
 
     @staticmethod
-    async def get_project_owner(
-        project: Project,
-        db: AsyncSession,
-    ) -> Optional[User]:
+    async def get_project_owner(project: Project, db: AsyncSession) -> Optional[User]:
         query = (
             select(User)
             .join(ProjectUser)
@@ -115,11 +90,7 @@ class ProjectDAO:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_project_permission(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> Optional[ProjectPermission]:
+    async def get_project_permission(project: Project, user: User, db: AsyncSession) -> Optional[ProjectPermission]:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.user_id == user.id,
@@ -131,52 +102,32 @@ class ProjectDAO:
         return project_user.permission
 
     @staticmethod
-    async def is_project_owner(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> bool:
+    async def is_project_owner(project: Project, user: User, db: AsyncSession) -> bool:
         return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.OWNER
 
     @staticmethod
-    async def is_project_admin(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> bool:
+    async def is_project_admin(project: Project, user: User, db: AsyncSession) -> bool:
         """
         判断用户是否为项目管理员
         """
         return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.ADMIN
 
     @staticmethod
-    async def is_project_writer(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> bool:
+    async def is_project_writer(project: Project, user: User, db: AsyncSession) -> bool:
         """
         判断用户是否为项目成员
         """
         return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.WRITER
 
     @staticmethod
-    async def is_project_viewer(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> bool:
+    async def is_project_viewer(project: Project, user: User, db: AsyncSession) -> bool:
         """
         判断用户是否为项目查看者
         """
         return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.VIEWER
 
     @staticmethod
-    async def is_project_member(
-        project: Project,
-        user: User,
-        db: AsyncSession,
-    ) -> bool:
+    async def is_project_member(project: Project, user: User, db: AsyncSession) -> bool:
         """
         判断用户是否为项目成员
         """
@@ -266,7 +217,7 @@ class ProjectDAO:
         # 复制文件
         for template_file in template_files:
             new_file = await FileDAO.create_file_in_db(
-                file_create=FileCreateUpdate(
+                file_create_update=FileCreateUpdate(
                     filename=template_file.filename,
                     filepath=template_file.filepath,
                     filetype=template_file.filetype,

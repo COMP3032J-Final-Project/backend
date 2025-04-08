@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 
 class FileCreateUpdate(Base):
+    project: "Project"
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
 

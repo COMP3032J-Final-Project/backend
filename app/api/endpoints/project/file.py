@@ -33,7 +33,6 @@ async def list_files(
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
     files = await ProjectDAO.get_files(project=current_project, db=db)
-    # files = [file for file in files if file.status == FileStatus.UPLOADED]
     return APIResponse(code=200, data=files, msg="success")
 
 
@@ -51,23 +50,8 @@ async def get_file_download_url(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
-    # if current_file.status != FileStatus.UPLOADED:
-    #     raise HTTPException(status_code=404, detail="File not found")
-    # if current_file.filetype == FileType.FOLDER:
-    # raise HTTPException(status_code=400, detail="Folder cannot be downloaded")
-
     url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
-
-
-@router.post("/create", response_model=APIResponse[File])
-async def create_file(
-    file_create: FileCreateUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIResponse[File]:
-    new_file = await FileDAO.create_file_in_db(file_create_update=file_create, project=current_project, db=db)
-    return APIResponse(code=200, data=new_file, msg="success")
 
 
 @router.delete("/{file_id:uuid}", response_model=APIResponse[File])
@@ -86,20 +70,18 @@ async def delete_file(
         raise HTTPException(status_code=403, detail="No permission to delete this file")
 
     try:
-        # if current_file.filetype == FileType.FILE and not
-        if not await FileDAO.delete_file_in_r2(current_file):
-            raise HTTPException(status_code=500, detail="Failed to delete file in R2")
+        if await FileDAO.delete_file(file=current_file, db=db):
+            return APIResponse(code=200, msg="success")
 
-        # await FileDAO.delete_file_in_db(current_file, db)
-        return APIResponse(code=200, msg="success")
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete file")
+
+    raise HTTPException(status_code=500, detail="Failed to delete file")
 
 
-@router.post("/upload-url", response_model=APIResponse[FileUploadResponse])
-async def get_file_upload_url(
-    file_create: FileCreateUpdate,
+@router.post("/create_update", response_model=APIResponse[FileUploadResponse])
+async def create_update_file(
+    file_create_update: FileCreateUpdate,
     current_project: Annotated[Project, Depends(get_current_project)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -113,21 +95,13 @@ async def get_file_upload_url(
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to upload files")
 
-    # 检查文件是否已存在
-    file = await FileDAO.get_file_by_path(current_project.id, file_create.filepath, file_create.filename, db)
-    if file:
-        raise HTTPException(status_code=400, detail="File already exists")
-
-    # 仅文件类型上传URL
-    url = None
-    new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
-    url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
-    response_data = FileUploadResponse(file_id=new_file.id, url=url)
+    file, url = await FileDAO.create_update_file(file_create_update=file_create_update, project=current_project, db=db)
+    response_data = FileUploadResponse(file_id=file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
 
 
-@router.put("/{file_id}/confirm-upload", response_model=APIResponse[File])
-async def confirm_file_upload(
+@router.put("/{file_id}/exist", response_model=APIResponse[File])
+async def check_file_exist(
     current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -143,11 +117,9 @@ async def confirm_file_upload(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于R2
-    is_exists = await FileDAO.check_file_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
     if is_exists:
         return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
-    else:
-        pass
 
     raise HTTPException(status_code=404, detail="File not uploaded to R2")
 

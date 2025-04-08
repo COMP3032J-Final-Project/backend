@@ -24,37 +24,89 @@ def force_posix(path: str) -> str:
 
 
 class FileDAO:
+    """
+    Notes
+    -----
+    This layer is used to abstract away the local and remote file systems, and present it
+    as a unified layer to the frontend.
+
+    """
 
     @staticmethod
-    async def rename_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+    async def create_update_file(
+        file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, expiration=3600
+    ) -> tuple[File, str]:
         """
-        Notes
-        -----
-        该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
+        增/改(同名称覆写)
+
+        Return
+        ------
+        File, str:
+            文件（新建或查找到的，对应上传/覆写URL）
         """
-        file.filename = file_create_update.filename
-        file.filepath = file_create_update.filepath
-
-        await db.add(file)
-        await db.commit()
-        await db.refresh(file)
-
-        return file
-
-    @staticmethod
-    def copy_file_r2(source_file: File, target_file: File, db: AsyncSession):
-        """
-        将source_file对应的r2资源复制到target_file
-
-        Notes
-        -----
-        失败无反馈
-        """
-        r2client.copy(
-            {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
-            Bucket=settings.R2_BUCKET,
-            Key=FileDAO.get_remote_file_path(file=target_file),
+        file = await FileDAO.get_file_by_path(
+            project_id=file_create_update.project.id,
+            filepath=file_create_update.filepath,
+            filename=file_create_update.filename,
+            db=db,
         )
+        if not file:
+            """
+            文件不存在->增
+            """
+            file_create_update.project
+            file = File(
+                filename=file_create_update.filename,
+                filepath=file_create_update.filepath,
+                project_id=project.id,
+            )
+            db.add(file)
+            await db.commit()
+            await db.refresh(file)
+
+        response = ""
+        try:
+            response = r2client.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=file)},
+                ExpiresIn=expiration,
+            )
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+
+        return file, response
+
+    @staticmethod
+    async def delete_file(file: File, db: AsyncSession) -> bool:
+        """
+        删除
+        """
+
+        try:
+            r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
+        except botocore.exceptions.ClientError as error:
+            logger.error(f"{error}")
+            return False
+
+        await db.delete(file)
+        await db.commit()
+        return True
+
+    """
+    WIP
+    """
+    # @staticmethod
+    # def copy_file(source_file: File, file_create_update: FileCreateUpdate, db: AsyncSession):
+    #     """
+    #     将source_file对应的r2资源复制到target_file
+
+    #     """
+    #     try:
+    #         r2client.copy(
+    #             {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
+    #             Bucket=settings.R2_BUCKET,
+    #             Key=FileDAO.get_remote_file_path(file=target_file),
+    #         )
 
     @staticmethod
     def get_temp_file_path(file: File) -> str:
@@ -72,6 +124,23 @@ class FileDAO:
         return force_posix(os.path.join("project", str(file.id)))
 
     @staticmethod
+    async def rename_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+        """
+        改
+        Notes
+        -----
+        该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
+        """
+        file.filename = file_create_update.filename
+        file.filepath = file_create_update.filepath
+
+        await db.add(file)
+        await db.commit()
+        await db.refresh(file)
+
+        return file
+
+    @staticmethod
     async def get_file_by_id(file_id: uuid.UUID, db: AsyncSession) -> Optional[File]:
         return await db.get(File, file_id)
 
@@ -85,97 +154,17 @@ class FileDAO:
         return result.scalars().first()
 
     @staticmethod
-    async def create_file_in_db(file_create_update: FileCreateUpdate, project: Project, db: AsyncSession) -> File:
-        """
-        创建db文件
-        """
-        file = File(
-            filename=file_create_update.filename,
-            filepath=file_create_update.filepath,
-            project_id=project.id,
-        )
-        db.add(file)
-        await db.commit()
-        await db.refresh(file)
-        return file
-
-    @staticmethod
-    async def delete_file_in_db(file: File, db: AsyncSession) -> None:
-        """
-        从数据库中删除文件
-        """
-        await db.delete(file)
-        await db.commit()
-
-    @staticmethod
-    async def delete_file_in_r2(file: File) -> bool:
-        """
-        从R2中删除文件
-        """
-        try:
-            if not await FileDAO.check_file_exist_in_r2(file):
-                return False
-
-            r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
-            return True
-        except botocore.exceptions.ClientError as error:
-            logger.error(f"Error deleting file from R2: {error}")
-            return False
-
-    @staticmethod
     async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
-        """
-        仅用于已经正常上传到远程的文件！
-        """
         fp = FileDAO.get_remote_file_path(file=file)
-        return await FileDAO.generate_get_obj_link_from_key(key=fp, expiration=expiration)
-
-    @staticmethod
-    async def generate_get_obj_link_from_key(key: str, expiration=3600) -> str:
-        """
-        使用r2 key生成临时链接
-        默认过期时间单位为秒
-        """
         response = ""
         try:
             response = r2client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": settings.R2_BUCKET, "Key": key},
-                ExpiresIn=expiration,
+                "get_object", Params={"Bucket": settings.R2_BUCKET, "Key": fp}, ExpiresIn=expiration
             )
         except botocore.exceptions.ClientError as error:
             logger.error(error)
 
         return response
-
-    @staticmethod
-    async def generate_put_obj_link_from_key(key: str, expiration=3600) -> str:
-        """
-        使用 R2 key 生成上传文件的临时 PUT 链接
-        """
-        try:
-            response = r2client.generate_presigned_url(
-                "put_object",
-                Params={
-                    "Bucket": settings.R2_BUCKET,
-                    "Key": key,
-                },
-                ExpiresIn=expiration,
-            )
-        except botocore.exceptions.ClientError as error:
-            logger.error(error)
-            raise
-
-        return response
-
-    @staticmethod
-    async def generate_put_obj_link_for_file(file: File, expiration=3600) -> str:
-        """
-        为文件生成上传的临时链接
-        """
-        fp = FileDAO.get_remote_file_path(file=file)
-        url = await FileDAO.generate_put_obj_link_from_key(key=fp, expiration=expiration)
-        return url
 
     @staticmethod
     async def check_file_exist_in_r2(file: File) -> bool:
@@ -191,59 +180,48 @@ class FileDAO:
         else:
             return True
 
-    @staticmethod
-    async def push_file_to_r2(file: File, localpath: str = "") -> None:
-        """
-        上传文件至云端
-        使用样例：
-            push_file_to_r2(file: File)
-            push_file_to_r2(file: File, localpath:)
-        如果规定localpath则覆写本地路径的取值
-        """
-        flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
-        frp = FileDAO.get_remote_file_path(file=file)
-        try:
-            with open(flp, "rb") as f:
-                r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=frp)
-        except botocore.exceptions.ClientError as error:
-            logger.error(error)
+    # @staticmethod
+    # async def push_file_to_r2(file: File, localpath: str = "") -> None:
+    #     """
+    #     上传文件至云端
+    #     使用样例：
+    #         push_file_to_r2(file: File)
+    #         push_file_to_r2(file: File, localpath:)
+    #     如果规定localpath则覆写本地路径的取值
+    #     """
+    #     flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
+    #     frp = FileDAO.get_remote_file_path(file=file)
+    #     try:
+    #         with open(flp, "rb") as f:
+    #             r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=frp)
+    #     except botocore.exceptions.ClientError as error:
+    #         logger.error(error)
 
-    @staticmethod
-    async def delete_file_from_r2(file: File) -> None:
-        await FileDAO.delete_key_from_r2(key=FileDAO.get_remote_file_path(file=file))
+    # @staticmethod
+    # def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
+    #     """
+    #     R2 key = 远程文件夹+远程文件名
+    #     """
+    #     contents: List[str] = []
+    #     try:
+    #         # this handles the more generic batched case.
+    #         response = r2client.list_objects_v2(Bucket=settings.R2_BUCKET, Prefix=prefix, MaxKeys=maxkeys)
+    #         contents.extend(content["Key"] for content in response["Contents"])
+    #         while "NextContinuationToken" in response:
+    #             continuation_token = response["NextContinuationToken"]
+    #             response = r2client.list_objects_v2(
+    #                 Bucket="hivey-files", Prefix=prefix, MaxKeys=maxkeys, ContinuationToken=continuation_token
+    #             )
+    #             contents.extend(content["Key"] for content in response["Contents"])
 
-    @staticmethod
-    async def delete_key_from_r2(key: str = "") -> None:
-        try:
-            r2client.delete_object(Bucket=settings.R2_BUCKET, Key=key)
-        except botocore.exceptions.ClientError as error:
-            logger.error(error)
+    #     except (botocore.exceptions.ClientError, KeyError) as error:
+    #         logger.error(error)
 
-    @staticmethod
-    def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
-        """
-        R2 key = 远程文件夹+远程文件名
-        """
-        contents: List[str] = []
-        try:
-            # this handles the more generic batched case.
-            response = r2client.list_objects_v2(Bucket=settings.R2_BUCKET, Prefix=prefix, MaxKeys=maxkeys)
-            contents.extend(content["Key"] for content in response["Contents"])
-            while "NextContinuationToken" in response:
-                continuation_token = response["NextContinuationToken"]
-                response = r2client.list_objects_v2(
-                    Bucket="hivey-files", Prefix=prefix, MaxKeys=maxkeys, ContinuationToken=continuation_token
-                )
-                contents.extend(content["Key"] for content in response["Contents"])
+    #     return contents
 
-        except (botocore.exceptions.ClientError, KeyError) as error:
-            logger.error(error)
-
-        return contents
-
-    @staticmethod
-    def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
-        """
-        拉取某一特定project对应的文件
-        """
-        return FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))
+    # @staticmethod
+    # def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
+    #     """
+    #     拉取某一特定project对应的文件
+    #     """
+    #     return FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))
