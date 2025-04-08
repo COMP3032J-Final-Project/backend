@@ -45,7 +45,7 @@ class FileDAO:
             文件（新建或查找到的，对应上传/覆写URL）
         """
         file = await FileDAO.get_file_by_path(
-            project_id=file_create_update.project.id,
+            project_id=project.id,
             filepath=file_create_update.filepath,
             filename=file_create_update.filename,
             db=db,
@@ -54,7 +54,6 @@ class FileDAO:
             """
             文件不存在->增
             """
-            file_create_update.project
             file = File(
                 filename=file_create_update.filename,
                 filepath=file_create_update.filepath,

@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 
+import requests
 from app.core.config import settings
 from app.models.project.file import FileCreateUpdate
 from app.models.project.project import (ProjectCreate, ProjectPermission,
@@ -47,11 +48,7 @@ async def create_template_projects(db: AsyncSession) -> None:
         """
         # delete file currently associated with the Project instance in database.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
-            await FileDAO.delete_file_in_db(file=file, db=db)
-
-        # delete any file from remote storage (r2)
-        for key in FileDAO.list_project_r2_keys(project_id=template_project.id):
-            await FileDAO.delete_key_from_r2(key=key)
+            await FileDAO.delete_file(file=file, db=db)
 
         # this rests both local and remote to a "clean-slate"
         filepaths = glob.glob(os.path.normpath(os.path.join(folder.path, "**.**")), recursive=True)
@@ -59,7 +56,14 @@ async def create_template_projects(db: AsyncSession) -> None:
 
         for filepath, relpath in zip(filepaths, relpaths):
             head, tail = os.path.split(relpath)
-            file = await FileDAO.create_file_in_db(
+            file, url = await FileDAO.create_update_file(
                 file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
             )
-            await FileDAO.push_file_to_r2(file=file, localpath=filepath)
+            with open(filepath, "rb") as f:
+                logger.info(tail)
+                requests.put(url, data=f)
+
+            # file = await FileDAO.create_file_in_db(
+            #     file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
+            # )
+            # await FileDAO.push_file_to_r2(file=file, localpath=filepath)
