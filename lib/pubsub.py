@@ -652,6 +652,13 @@ class ProjectGeneralManager(WebsocketConnManager):
 
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         try:
+            # 检查当前project是否存在
+            async with async_session() as db:
+                project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
+                if not project:
+                    logger.error(f"Project not found: {channel}")
+                    return
+            
             # 检查并解析message
             if message["type"] != "message":
                 logger.error(f"Skipping non-message type in process_pubsub: {message['type']}")
