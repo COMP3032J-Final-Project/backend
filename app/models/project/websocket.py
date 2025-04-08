@@ -47,7 +47,7 @@ class EventType(str, Enum):
     MESSAGE_WITHDRAWN = "message_withdrawn"
 
 
-class ClientErrorData(Base):
+class BroadcastErrorData(Base):
     """错误数据模型"""
 
     code: int
@@ -55,8 +55,8 @@ class ClientErrorData(Base):
     original_action: Optional[str] = None  # 原始action
 
 
-class ClientMessage(Base):
-    """WebSocket消息基础模型"""
+class BroadcastMessage(Base):
+    """广播消息模型"""
 
     event_type: Optional[EventType]
     event_scope: Optional[EventScope]
@@ -65,9 +65,9 @@ class ClientMessage(Base):
     data: Dict[str, Any]
 
 
-class ClientErrorMessage(ClientMessage):
+class BroadcastErrorMessage(BroadcastMessage):
     """错误消息模型"""
 
     event_scope: EventScope = EventScope.ERROR
     event_type: None = None
-    data: ClientErrorData
+    data: BroadcastErrorData

@@ -1,16 +1,26 @@
 from typing import Annotated, List
 
+from loguru import logger
+
 from app.api.deps import get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.project import (OwnerInfo, Project, ProjectCreate,
-                                        ProjectID, ProjectInfo,
-                                        ProjectPermission, ProjectsDelete,
-                                        ProjectType, ProjectUpdate)
+from app.models.project.project import (
+    Project,
+    ProjectCreate,
+    ProjectID,
+    ProjectInfo,
+    ProjectPermission,
+    ProjectsDelete,
+    ProjectType,
+    ProjectUpdate,
+)
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.project.websocket import EventType, EventScope
+from app.core.websocket import project_general_manager
 
 router = APIRouter()
 
@@ -43,15 +53,10 @@ async def get_projects(
     """获取当前用户的所有项目"""
     projects = await ProjectDAO.get_projects(current_user, db)
 
-    # 补充其他信息
+    # 包装项目信息
     projects_info = []
     for project in projects:
-        project_info = ProjectInfo.model_validate(project)
-        owner = await ProjectDAO.get_project_owner(project, db)
-        owner_info = OwnerInfo.model_validate(owner)
-        members_num = len(await ProjectDAO.get_members(project, db))
-        project_info.owner = owner_info
-        project_info.members_num = members_num
+        project_info = await ProjectDAO.get_project_info(project, db)
         projects_info.append(project_info)
     return APIResponse(code=200, data=projects_info, msg="success")
 
@@ -67,36 +72,45 @@ async def get_project(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
-    # 补充其他信息
-    owner = await ProjectDAO.get_project_owner(current_project, db)
-    owner_info = OwnerInfo.model_validate(owner)
-    members_num = len(await ProjectDAO.get_members(current_project, db))
-
-    project_info = ProjectInfo.model_validate(current_project)
-    project_info.owner = owner_info
-    project_info.members_num = members_num
-
+    project_info = await ProjectDAO.get_project_info(current_project, db)
     return APIResponse(code=200, data=project_info, msg="success")
 
 
-# @router.put("/{project_id:uuid}", response_model=APIResponse[Project])
-# async def update_project(
-#     project_update: ProjectUpdate,
-#     current_user: Annotated[User, Depends(get_current_user)],
-#     current_project: Annotated[Project, Depends(get_current_project)],
-#     db: Annotated[AsyncSession, Depends(get_db)],
-# ) -> APIResponse:
-#     """更新项目信息"""
-#     # 检查用户是否为项目管理员或创建者
-#     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-#     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
-#     if not is_admin and not is_owner:
-#         raise HTTPException(status_code=403, detail="No permission to update this project")
+@router.put("/{project_id:uuid}", response_model=APIResponse)
+async def update_project(
+    project_update: ProjectUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """更新项目信息"""
+    # 检查用户是否为项目管理员或创建者
+    is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="No permission to update this project")
 
-#     updated_project = await ProjectDAO.update_project(current_project, project_update, db)
-#     if updated_project is None:
-#         raise HTTPException(status_code=400, detail="Failed to update project")
-#     return APIResponse(code=200, data=updated_project, msg="Project updated")
+    updated_project = await ProjectDAO.update_project(current_project, project_update, db)
+    if updated_project is None:
+        raise HTTPException(status_code=400, detail="Failed to update project")
+
+    # # 发送广播
+    # try:
+    #     channel = str(updated_project.id)
+    #     project_info = await ProjectDAO.get_project_info(updated_project, db)
+    #     project_info_dict = project_info.model_dump(mode="json")
+
+    #     updated_message = {
+    #         "event_type": EventType.PROJECT_UPDATED,
+    #         "event_scope": EventScope.PROJECT,
+    #         "data": project_info_dict,
+    #     }
+
+    #     await project_general_manager.send_message(channel, updated_message, "system")
+    # except Exception as e:
+    #     logger.error(f"Failed to broadcast project update: {str(e)}")
+
+    return APIResponse(code=200, msg="Project updated")
 
 
 @router.delete("/", response_model=APIResponse)
@@ -148,6 +162,22 @@ async def delete_project(
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to delete this project")
-    # !ChatRoom和ChatMessage会被级联删除
+
+    # 删除项目
     await ProjectDAO.delete_project(current_project, db)
+
+    # 发送广播
+    try:
+        channel = str(current_project.id)
+        deleted_message = {
+            "event_scope": EventScope.PROJECT,
+            "event_type": EventType.PROJECT_DELETED,
+            "data": {
+                "project_id": str(current_project.id),
+            },
+        }
+        await project_general_manager.publish_message(channel, deleted_message)
+    except Exception as e:
+        logger.error(f"Failed to broadcast project deletion: {str(e)}")
+
     return APIResponse(msg="Project deleted")

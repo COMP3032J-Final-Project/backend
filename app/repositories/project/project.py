@@ -2,7 +2,15 @@ import uuid
 from typing import Optional
 
 from app.models.project.file import File, FileCreate
-from app.models.project.project import Project, ProjectCreate, ProjectPermission, ProjectUpdate, ProjectUser
+from app.models.project.project import (
+    OwnerInfo,
+    Project,
+    ProjectCreate,
+    ProjectInfo,
+    ProjectPermission,
+    ProjectUpdate,
+    ProjectUser,
+)
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +49,23 @@ class ProjectDAO:
         query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id)
         result = await db.execute(query)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_project_info(
+        project: Project,
+        db: AsyncSession,
+    ) -> ProjectInfo:
+        """
+        包装项目信息
+        """
+        owner = await ProjectDAO.get_project_owner(project, db)
+        owner_info = OwnerInfo.model_validate(owner)
+        members_num = len(await ProjectDAO.get_members(project, db))
+
+        project_info = ProjectInfo.model_validate(project)
+        project_info.owner = owner_info
+        project_info.members_num = members_num
+        return project_info
 
     @staticmethod
     async def create_project(

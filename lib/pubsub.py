@@ -16,7 +16,11 @@ import orjson
 import redis.asyncio as aioredis
 from app.core.db import async_session
 from app.models.project.chat import ChatMessageType, ChatMessageData
-from app.models.project.websocket import EventType, EventScope, ClientMessage, ClientErrorMessage, ClientErrorData
+from app.models.project.websocket import (
+    EventType,
+    EventScope,
+    BroadcastMessage,
+)
 from app.repositories.project.chat import ChatDAO
 from fastapi import WebSocket
 from loguru import logger
@@ -612,6 +616,18 @@ class WebsocketConnManager(ABC):
         await self.psm.publish(channel, data_to_publish)
         logger.debug(f"Published message to channel {channel} from client {client_id}")
 
+    async def publish_message(self, channel: str, message: Any, client_id: str = "system"):
+        """
+        直接向频道发布消息，用于系统消息广播(临时)
+        """
+        if isinstance(message, bytes):
+            message = base64.b64encode(message).decode()
+
+        data_to_publish = orjson.dumps({"action": "send_message", "message": message, "client_id": client_id})
+
+        await self.psm.publish(channel, data_to_publish)
+        logger.debug(f"Published system message to channel {channel} from {client_id}")
+
     @abstractmethod
     async def _process_pubsub_message(self, channel: str, message: Any):
         """Process a MESSAGE received from the CHANNEL"""
@@ -728,12 +744,12 @@ class ClientMessageMediator:
             logger.error(f"No handler found for event_scope: {event_scope}, event_type: {event_type}")
             raise
 
-    async def broadcast_message(self, client_message: ClientMessage, channel: str) -> None:
+    async def broadcast_message(self, broadcast_message: BroadcastMessage, channel: str) -> None:
         """广播消息"""
         for cid, channels in self.connection_manager.client_channels.items():
             if channel in channels and cid in self.connection_manager.active_connections:
                 websocket = self.connection_manager.active_connections[cid]
-                await websocket.send_json(client_message.model_dump())
+                await websocket.send_json(broadcast_message.model_dump(mode="json"))
         logger.debug(f"Broadcast message to all clients in channel {channel}")
 
 
@@ -750,8 +766,8 @@ class ClientMessageHandler(ABC):
     def _register_handlers(self):
         pass
 
-    async def _broadcast_message(self, client_message: ClientMessage, channel: str):
-        await self.mediator.broadcast_message(client_message, channel)
+    async def _broadcast_message(self, broadcast_message: BroadcastMessage, channel: str):
+        await self.mediator.broadcast_message(broadcast_message, channel)
 
 
 class ChatHandler(ClientMessageHandler):
@@ -795,19 +811,16 @@ class ChatHandler(ClientMessageHandler):
                     message_type=message_type, content=content, timestamp=current_time, user=user_info
                 )
 
-                message_dict = chat_message.model_dump()
-                message_dict["timestamp"] = current_time.isoformat()  # 转str
-
-                client_message = ClientMessage(
+                sent_message = BroadcastMessage(
                     event_type=event_type,
                     event_scope=event_scope,
                     channel=channel,
-                    data=message_dict,
                     client_id=client_id,
+                    data=chat_message.model_dump(mode="json"),
                 )
 
                 # 广播消息给所有客户端
-                await self._broadcast_message(client_message, channel)
+                await self._broadcast_message(sent_message, channel)
 
                 # 将消息保存到数据库
                 if client_id != "system":
@@ -838,12 +851,35 @@ class ProjectHandler(ClientMessageHandler):
     async def handle_project_updated(
         self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
     ):
+        # try:
+        #     updated_message = ClientMessage(
+        #         event_type=event_type,
+        #         event_scope=event_scope,
+        #         channel=channel,
+        #         client_id=client_id,
+        #         data=data,
+        #     )
+        #     await self._broadcast_message(updated_message, channel)
+        # except Exception as e:
+        #     logger.error(f"Error handling project updated: {e}")
+        #     raise
         pass
 
     async def handle_project_deleted(
         self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
     ):
-        pass
+        try:
+            deleted_message = BroadcastMessage(
+                event_type=event_type,
+                event_scope=event_scope,
+                channel=channel,
+                client_id=client_id,
+                data=data,
+            )
+            await self._broadcast_message(deleted_message, channel)
+        except Exception as e:
+            logger.error(f"Error handling project deleted: {e}")
+            raise
 
 
 class DumbBroadcaster(WebsocketConnManager):

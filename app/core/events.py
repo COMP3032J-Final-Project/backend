@@ -27,13 +27,13 @@ async def startup_handler() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async for db in get_db():
-        await create_default_admin(db)
-        await create_template_projects(db)
-
     await dumb_broadcaster.initialize()
     await cursor_tracking_broadcaster.initialize()
     await project_general_manager.initialize()
+
+    async for db in get_db():
+        await create_default_admin(db)
+        await create_template_projects(db)
 
 
 async def shutdown_handler() -> None:
