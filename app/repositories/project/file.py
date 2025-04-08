@@ -24,6 +24,14 @@ def force_posix(path: str) -> str:
 
 
 class FileDAO:
+
+    @staticmethod
+    def rename_file(file: File, db: AsyncSession) -> str:
+        """
+        注意！注意！注意！
+        该操作有非常复杂的副作用，请务必谨慎考虑
+        """
+
     @staticmethod
     def get_temp_file_path(file: File) -> str:
         """
@@ -37,12 +45,7 @@ class FileDAO:
         R2平台路径必须使用POSIX类路径
         返回格式: project/{project_id}/{filepath}/{filename}
         """
-        logger.info(str(file.project_id))
-        logger.info(str(file.filepath))
-        logger.info(str(file.filename))
-        rp = force_posix(os.path.join("project", str(file.project_id), str(file.filepath), str(file.filename)))
-        logger.info(rp)
-        return rp
+        return force_posix(os.path.join("project", str(file.id)))
 
     @staticmethod
     async def get_file_by_id(file_id: uuid.UUID, db: AsyncSession) -> Optional[File]:
@@ -58,16 +61,6 @@ class FileDAO:
         return result.scalars().first()
 
     @staticmethod
-    async def get_pending_files(project_id: uuid.UUID, db: AsyncSession) -> List[File]:
-        """
-        获取项目中状态为pending的文件
-        """
-        query = select(File).where(File.project_id == project_id)
-        # query = select(File).where(File.project_id == project_id, File.status == FileStatus.PENDING)
-        result = await db.execute(query)
-        return result.scalars().all()
-
-    @staticmethod
     async def create_file_in_db(file_create: FileCreate, project: Project, db: AsyncSession) -> File:
         """
         创建db文件
@@ -75,7 +68,6 @@ class FileDAO:
         file = File(
             filename=file_create.filename,
             filepath=file_create.filepath,
-            filetype=file_create.filetype,
             project_id=project.id,
         )
         db.add(file)
@@ -132,11 +124,11 @@ class FileDAO:
 
         return response
 
+    @staticmethod
     async def generate_put_obj_link_from_key(key: str, expiration=3600) -> str:
         """
         使用 R2 key 生成上传文件的临时 PUT 链接
         """
-
         try:
             response = r2client.generate_presigned_url(
                 "put_object",
@@ -184,10 +176,10 @@ class FileDAO:
         如果规定localpath则覆写本地路径的取值
         """
         flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
-        fp = FileDAO.get_remote_file_path(file=file)
+        frp = FileDAO.get_remote_file_path(file=file)
         try:
             with open(flp, "rb") as f:
-                r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=fp)
+                r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=frp)
         except botocore.exceptions.ClientError as error:
             logger.error(error)
 

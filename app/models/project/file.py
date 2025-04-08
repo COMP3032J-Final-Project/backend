@@ -9,15 +9,9 @@ if TYPE_CHECKING:
     from .project import Project
 
 
-class FileType(str, Enum):
-    FILE = "file"
-    FOLDER = "folder"
-
-
 class FileCreate(Base):
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
-    filetype: FileType = Field(...)
 
 
 class FileURL(Base):
@@ -39,4 +33,3 @@ class File(BaseDB, table=True):
     project: "Project" = Relationship(back_populates="files")
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
     filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
-    filetype: FileType = Field(default=FileType.FILE, sa_column_kwargs={"nullable": False})
