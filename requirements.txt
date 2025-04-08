@@ -21,4 +21,4 @@ sqlmodel~=0.0.22
 uvicorn==0.21.1
 orjson~=3.10.15
 boto3~=1.37.13
-requests
+requests~=2.32.3

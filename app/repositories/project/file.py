@@ -45,19 +45,14 @@ class FileDAO:
             文件（新建或查找到的，对应上传/覆写URL）
         """
         file = await FileDAO.get_file_by_path(
-            project_id=project.id,
-            filepath=file_create_update.filepath,
-            filename=file_create_update.filename,
-            db=db,
+            project_id=project.id, filepath=file_create_update.filepath, filename=file_create_update.filename, db=db
         )
         if not file:
             """
             文件不存在->增
             """
             file = File(
-                filename=file_create_update.filename,
-                filepath=file_create_update.filepath,
-                project_id=project.id,
+                filename=file_create_update.filename, filepath=file_create_update.filepath, project_id=project.id
             )
             db.add(file)
             await db.commit()
@@ -129,6 +124,7 @@ class FileDAO:
         Notes
         -----
         该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
+        该操作有比较复杂的副作用，请务必注意！
         """
         file.filename = file_create_update.filename
         file.filepath = file_create_update.filepath
@@ -172,10 +168,10 @@ class FileDAO:
         """
         try:
             r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file=file))
-        except botocore.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "404":
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "404":
                 return False
-            raise
+            logger.error(error)
         else:
             return True
 

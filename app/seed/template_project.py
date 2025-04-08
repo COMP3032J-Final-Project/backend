@@ -46,7 +46,6 @@ async def create_template_projects(db: AsyncSession) -> None:
         """ below this is executed everytime on startup
             假设：服务不经常重启
         """
-        # delete file currently associated with the Project instance in database.
         for file in await ProjectDAO.get_files(project=template_project, db=db):
             await FileDAO.delete_file(file=file, db=db)
 
@@ -62,8 +61,3 @@ async def create_template_projects(db: AsyncSession) -> None:
             with open(filepath, "rb") as f:
                 logger.info(tail)
                 requests.put(url, data=f)
-
-            # file = await FileDAO.create_file_in_db(
-            #     file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
-            # )
-            # await FileDAO.push_file_to_r2(file=file, localpath=filepath)
