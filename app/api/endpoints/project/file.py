@@ -5,8 +5,8 @@ from typing import Annotated
 from app.api.deps import (get_current_file, get_current_project,
                           get_current_user, get_db)
 from app.models.base import APIResponse
-from app.models.project.file import (File, FileCreate, FileType,
-                                     FileUploadResponse, FileURL)
+from app.models.project.file import (File, FileCreate, FileUploadResponse,
+                                     FileURL)
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
@@ -53,8 +53,8 @@ async def get_file_download_url(
 
     # if current_file.status != FileStatus.UPLOADED:
     #     raise HTTPException(status_code=404, detail="File not found")
-    if current_file.filetype == FileType.FOLDER:
-        raise HTTPException(status_code=400, detail="Folder cannot be downloaded")
+    # if current_file.filetype == FileType.FOLDER:
+    # raise HTTPException(status_code=400, detail="Folder cannot be downloaded")
 
     url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
@@ -86,10 +86,11 @@ async def delete_file(
         raise HTTPException(status_code=403, detail="No permission to delete this file")
 
     try:
-        if current_file.filetype == FileType.FILE and not await FileDAO.delete_file_in_r2(current_file):
+        # if current_file.filetype == FileType.FILE and not
+        if not await FileDAO.delete_file_in_r2(current_file):
             raise HTTPException(status_code=500, detail="Failed to delete file in R2")
 
-        await FileDAO.delete_file_in_db(current_file, db)
+        # await FileDAO.delete_file_in_db(current_file, db)
         return APIResponse(code=200, msg="success")
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
@@ -119,12 +120,12 @@ async def get_file_upload_url(
 
     # 仅文件类型上传URL
     url = None
-    if file_create.filetype == FileType.FILE:
-        new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
-        url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
-    elif file_create.filetype == FileType.FOLDER:
-        new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
-        # new_file.status = FileStatus.UPLOADED
+    # if file_create.filetype == FileType.FILE:
+    new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
+    url = await FileDAO.generate_put_obj_link_for_file(file=new_file)
+    # elif file_create.filetype == FileType.FOLDER:
+    #     new_file = await FileDAO.create_file_in_db(file_create, current_project, db)
+    # new_file.status = FileStatus.UPLOADED
 
     response_data = FileUploadResponse(file_id=new_file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
@@ -162,6 +163,11 @@ async def confirm_file_upload(
 @router.put("/{file_id}/test", response_model=APIResponse)
 async def test_remote_file_path(
     file_id: Annotated[uuid.UUID, Path(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    filepath = FileDAO.get_remote_file_path(file_id)
-    return APIResponse(code=200, data=filepath, msg="success")
+    file = await FileDAO.get_file_by_id(file_id=file_id, db=db)
+    if file:
+        filepath = FileDAO.get_remote_file_path(file=file)
+        return APIResponse(code=200, data=filepath, msg="success")
+    else:
+        return APIResponse(code=404, msg="file does not exist in db.")
