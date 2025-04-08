@@ -5,8 +5,8 @@ from typing import Annotated
 from app.api.deps import (get_current_file, get_current_project,
                           get_current_user, get_db)
 from app.models.base import APIResponse
-from app.models.project.file import (File, FileCreate, FileType,
-                                     FileUploadResponse, FileURL)
+from app.models.project.file import (File, FileCreate, FileUploadResponse,
+                                     FileURL)
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
