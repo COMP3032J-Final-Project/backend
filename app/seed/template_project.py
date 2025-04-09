@@ -59,5 +59,4 @@ async def create_template_projects(db: AsyncSession) -> None:
                 file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
             )
             with open(filepath, "rb") as f:
-                logger.info(tail)
                 requests.put(url, data=f)

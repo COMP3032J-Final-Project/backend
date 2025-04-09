@@ -68,6 +68,10 @@ you decide. Worker number reference: <https://kisspeter.github.io/fastapi-perfor
 fastapi run --workers [2 x $num_cores + 1] ./app
 ```
 
+### 测试
+```sh
+python3 -m unittest
+```
 ## API 视图
 
 <http://localhost:8000/docs>
