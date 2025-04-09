@@ -37,7 +37,7 @@ class FileDAO:
         file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, expiration=3600
     ) -> tuple[File, str]:
         """
-        增/改(同名称覆写)
+        增/改
 
         Return
         ------
@@ -58,6 +58,10 @@ class FileDAO:
             await db.commit()
             await db.refresh(file)
 
+        """
+        文件存在->改
+        """
+
         response = ""
         try:
             response = r2client.generate_presigned_url(
@@ -67,6 +71,7 @@ class FileDAO:
             )
         except botocore.exceptions.ClientError as error:
             logger.error(error)
+            raise
 
         return file, response
 
@@ -75,32 +80,64 @@ class FileDAO:
         """
         删除
         """
-
         try:
             r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
         except botocore.exceptions.ClientError as error:
             logger.error(f"{error}")
-            return False
+            raise
 
         await db.delete(file)
         await db.commit()
         return True
 
-    """
-    WIP
-    """
-    # @staticmethod
-    # def copy_file(source_file: File, file_create_update: FileCreateUpdate, db: AsyncSession):
-    #     """
-    #     将source_file对应的r2资源复制到target_file
+    @staticmethod
+    async def move_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+        """
+        移动/重命名现有文件（参考Linux mv）
 
-    #     """
-    #     try:
-    #         r2client.copy(
-    #             {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
-    #             Bucket=settings.R2_BUCKET,
-    #             Key=FileDAO.get_remote_file_path(file=target_file),
-    #         )
+        Parameters
+        ----------
+        file: File
+            源文件
+        file_create_update: FileCreateUpdate
+            目标定义
+        db:
+            数据库
+        """
+
+        file.filename = file_create_update.filename
+        file.filepath = file_create_update.filepath
+
+        await db.add(file)
+        await db.commit()
+        await db.refresh(file)
+        return file
+
+    @staticmethod
+    async def copy_file(source_file: File, target_file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+        """
+        复制文件
+
+        """
+        target_file = File(
+            filename=target_file_create_update.filename,
+            filepath=target_file_create_update.filepath,
+            project_id=source_file.project_id,
+        )
+        db.add(target_file)
+        await db.commit()
+        await db.refresh(target_file)
+        try:
+            r2client.copy(
+                {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=target_file)},
+                Bucket=settings.R2_BUCKET,
+                Key=FileDAO.get_remote_file_path(file=target_file),
+            )
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
+            raise
+
+        return target_file
 
     @staticmethod
     def get_temp_file_path(file: File) -> str:
@@ -158,6 +195,7 @@ class FileDAO:
             )
         except botocore.exceptions.ClientError as error:
             logger.error(error)
+            raise
 
         return response
 
@@ -172,6 +210,7 @@ class FileDAO:
             if error.response["Error"]["Code"] == "404":
                 return False
             logger.error(error)
+            raise
         else:
             return True
 
