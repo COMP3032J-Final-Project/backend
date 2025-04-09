@@ -20,6 +20,8 @@ from app.models.project.websocket import (
     EventType,
     EventScope,
     BroadcastMessage,
+    BroadcastErrorMessage,
+    BroadcastErrorData,
 )
 from app.repositories.project.chat import ChatDAO
 from fastapi import WebSocket
@@ -652,17 +654,9 @@ class ProjectGeneralManager(WebsocketConnManager):
 
     async def _process_pubsub_message(self, channel: str, message: Any) -> None:
         try:
-            # 检查当前project是否存在
-            async with async_session() as db:
-                project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
-                if not project:
-                    logger.error(f"Project not found: {channel}")
-                    return
-            
             # 检查并解析message
             if message["type"] != "message":
-                logger.error(f"Skipping non-message type in process_pubsub: {message['type']}")
-                return
+                raise ValueError(f"Skipping non-message type in process_pubsub: {message['type']}")
 
             message_data = message["data"]
 
@@ -671,8 +665,7 @@ class ProjectGeneralManager(WebsocketConnManager):
                     parsed_data = orjson.loads(message_data)
                     logger.debug(f"Parsed JSON message: {parsed_data}")
                 except orjson.JSONDecodeError:
-                    logger.error(f"Invalid JSON message: {message_data}")
-                    return
+                    raise ValueError(f"Invalid JSON message: {message_data}")
             else:
                 parsed_data = message_data
                 logger.debug(f"Using non-string message data: {parsed_data}")
@@ -680,6 +673,12 @@ class ProjectGeneralManager(WebsocketConnManager):
             action = parsed_data.get("action")
             client_id = parsed_data.get("client_id")
             client_message = parsed_data.get("message", {})
+
+            # 检查当前project是否存在
+            async with async_session() as db:
+                project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
+                if not project:
+                    raise ValueError(f"Project not found: {channel}")
 
             # 处理action
             if action in ["join", "leave", "disconnect"]:
@@ -699,32 +698,42 @@ class ProjectGeneralManager(WebsocketConnManager):
                         client_message = orjson.loads(client_message)
                         logger.debug(f"Parsed nested JSON message: {client_message}")
                     except orjson.JSONDecodeError:
-                        logger.error(f"Invalid JSON message: {client_message}")
-                        return
+                        raise ValueError(f"Invalid nested JSON message format: {client_message}")
 
                 event_type = client_message.get("event_type")  # EventType枚举
                 event_scope = client_message.get("event_scope")  # EventScope枚举
                 data = client_message.get("data", {})
 
                 if not event_type or not event_scope or not data:
-                    logger.error(f"Missing event_type or event_scope or data in message: {parsed_data}")
-                    return
+                    raise ValueError(f"Missing event_type or event_scope or data in message: {parsed_data}")
 
-                try:
-                    # 分发消息
-                    event_scope = EventScope(event_scope)
-                    event_type = EventType(event_type)
-                    await self.mediator.dispatch_message(channel, event_scope, event_type, client_id, data)
-                except ValueError as e:
-                    logger.error(f"Invalid event_type or event_scope: {e}")
-                    return
-                except Exception as e:
-                    logger.error(f"Error dispatching message: {e}")
-                    return
-
+                # 分发消息
+                event_scope = EventScope(event_scope)
+                event_type = EventType(event_type)
+                await self.mediator.dispatch_message(channel, event_scope, event_type, client_id, data)
         except Exception as e:
-            logger.error(f"Error in process_pubsub_message: {e}")
-            raise
+            if client_id and action:
+                await self._send_error_message(channel, client_id, 500, f"Error in process_pubsub_message: {e}", action)
+            else:
+                logger.error(f"Error in process_pubsub_message: {e}")
+
+    async def _send_error_message(
+        self, channel: str, client_id: str, code: int, message: str, original_action: Optional[str] = None
+    ):
+        """
+        发送错误消息给客户端
+        """
+        logger.error(message)
+
+        error_data = BroadcastErrorData(code=code, message=message, original_action=original_action)
+        message = BroadcastErrorMessage(channel=channel, client_id=client_id, data=error_data)
+
+        if client_id in self.active_connections:
+            websocket = self.active_connections[client_id]
+            await websocket.send_json(message.model_dump(mode="json"))
+            logger.debug(f"Sent error message to client {client_id}")
+        else:
+            logger.warning(f"Catch error message from {client_id} but no connection found")
 
 
 class ClientMessageMediator:
@@ -748,8 +757,7 @@ class ClientMessageMediator:
         if handler_key in self.handlers:
             await self.handlers[handler_key](channel, event_scope, event_type, client_id, data)
         else:
-            logger.error(f"No handler found for event_scope: {event_scope}, event_type: {event_type}")
-            raise
+            raise ValueError(f"No handler found for event_scope: {event_scope}, event_type: {event_type}")
 
     async def broadcast_message(self, broadcast_message: BroadcastMessage, channel: str) -> None:
         """广播消息"""
@@ -792,8 +800,11 @@ class ChatHandler(ClientMessageHandler):
             # 提取消息数据
             message_type = data.get("message_type", "text")
             message_type = ChatMessageType(message_type)
-            content = data.get("content", "")
+            content = data.get("content")
             current_time = datetime.now()
+
+            if not content:
+                raise ValueError("Content is required")
 
             # 获取用户信息和项目信息
             async with async_session() as db:
@@ -803,14 +814,12 @@ class ChatHandler(ClientMessageHandler):
                     # 获取用户信息
                     user = await UserDAO.get_user_by_id(uuid.UUID(client_id), db)
                     if not user:
-                        logger.error(f"User not found: {client_id}")
                         raise ValueError(f"User not found: {client_id}")
                     user_info = {"id": str(user.id), "username": user.username, "email": user.email}
 
                     # 获取项目信息
                     project = await ProjectDAO.get_project_by_id(uuid.UUID(channel), db)
                     if not project:
-                        logger.error(f"Project not found: {channel}")
                         raise ValueError(f"Project not found: {channel}")
 
                 # 创建聊天消息数据
@@ -842,7 +851,6 @@ class ChatHandler(ClientMessageHandler):
                         )
                         logger.info(f"Chat message from {client_id} stored in database")
                     except Exception as e:
-                        logger.error(f"Failed to store chat message: {e}")
                         raise ValueError(f"Failed to store chat message: {e}")
 
         except Exception as e:
