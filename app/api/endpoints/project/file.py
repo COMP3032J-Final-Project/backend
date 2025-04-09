@@ -100,7 +100,7 @@ async def create_update_file(
     return APIResponse(code=200, data=response_data, msg="success")
 
 
-@router.put("/{file_id}/exist", response_model=APIResponse[File])
+@router.put("/{file_id:uuid}/exist", response_model=APIResponse[File])
 async def check_file_exist(
     current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],
@@ -160,7 +160,12 @@ async def cp(
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
     try:
-        file = await FileDAO.copy_file(source_file=current_file, target_file_create_update=file_create_update, db=db)
+        file = await FileDAO.copy_file(
+            source_file=current_file,
+            target_file_create_update=file_create_update,
+            target_project=current_project,
+            db=db,
+        )
         return APIResponse(code=200, data=file, msg="success")
     except Exception as error:
         return APIResponse(code=500, detail=f"{error}")

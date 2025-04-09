@@ -114,15 +114,22 @@ class FileDAO:
         return file
 
     @staticmethod
-    async def copy_file(source_file: File, target_file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+    async def copy_file(
+        source_file: File,
+        target_file_create_update: FileCreateUpdate,
+        db: AsyncSession,
+        target_project: Optional[Project] = None,
+    ) -> File:
         """
         复制文件
 
         """
+        if not target_project:
+            target_project = source_file.project
         target_file = File(
             filename=target_file_create_update.filename,
             filepath=target_file_create_update.filepath,
-            project_id=source_file.project_id,
+            project_id=target_project.id,
         )
         db.add(target_file)
         await db.commit()

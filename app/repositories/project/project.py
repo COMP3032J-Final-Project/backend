@@ -216,13 +216,13 @@ class ProjectDAO:
 
         # 复制文件
         for template_file in template_files:
-            new_file = await FileDAO.create_file_in_db(
-                file_create_update=FileCreateUpdate(
+            # 这样其实应该就可以了
+            new_file = FileDAO.copy_file(
+                source_file=template_file,
+                target_project=new_project,
+                target_file_create_update=FileCreateUpdate(
                     filename=template_file.filename,
                     filepath=template_file.filepath,
-                    filetype=template_file.filetype,
                 ),
-                project=new_project,
                 db=db,
             )
-            # await FileDAO.push_file_to_r2(file=new_file, localpath=template_file.filepath)
