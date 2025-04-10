@@ -34,6 +34,7 @@ async def project(
     try:
         is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
         if not is_member:
+            logger.debug(f"{current_user} is not a member of {current_project}")
             await websocket.close(code=4000, reason="No permission to access the project")
             return
     except Exception as e:
@@ -46,11 +47,11 @@ async def project(
     channel = get_project_channel_name(current_project.id)
     try:
         await project_general_manager.subscribe(client_id, channel, websocket)
-        await project_general_manager.publish(channel, orjson.dumps(ClientMessage(
+        await project_general_manager.publish(channel, ClientMessage(
                 client_id = client_id,
                 scope = EventScope.MEMBER,
                 action = MemberAction.JOINED,
-            ).model_dump_json()))
+            ).model_dump_json())
     except Exception as e:
         logger.error(f"Error connecting to project: {e}")
         await project_general_manager.disconnect(client_id)
