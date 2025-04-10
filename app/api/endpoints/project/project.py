@@ -20,8 +20,9 @@ from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.project.websocket import EventType, EventScope
-from app.core.websocket import project_general_manager
+
+from app.models.project.websocket import Message, EventScope, ProjectAction
+from .websocket_handlers import project_general_manager, get_project_channel_name
 
 router = APIRouter()
 
@@ -186,15 +187,14 @@ async def delete_project(
 
     # 发送广播
     try:
-        channel = str(current_project.id)
-        deleted_message = {
-            "event_scope": EventScope.PROJECT,
-            "event_type": EventType.PROJECT_DELETED,
-            "data": {
-                "project_id": str(current_project.id),
-            },
-        }
-        await project_general_manager.publish_message(channel, deleted_message)
+        channel = get_project_channel_name(current_project.id)
+        await project_general_manager.publish(channel, Message(
+            scope = EventScope.PROJECT,
+            action = ProjectAction.DELETED_PROJECT,
+            payload = {
+                'project_id': str(current_project.id)
+            }
+        ).model_dump_json())
     except Exception as e:
         logger.error(f"Failed to broadcast project deletion: {str(e)}")
 

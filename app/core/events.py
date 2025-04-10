@@ -12,11 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .db import engine
-from .websocket import (
-    cursor_tracking_broadcaster,
-    dumb_broadcaster,
-    project_general_manager,
-)
+from app.api.endpoints.project.websocket_handlers import project_general_manager
 
 
 async def startup_handler() -> None:
@@ -27,8 +23,6 @@ async def startup_handler() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    await dumb_broadcaster.initialize()
-    await cursor_tracking_broadcaster.initialize()
     await project_general_manager.initialize()
 
     async for db in get_db():
@@ -40,8 +34,6 @@ async def shutdown_handler() -> None:
     """
     应用关闭时的处理函数
     """
-    await dumb_broadcaster.cleanup()
-    await cursor_tracking_broadcaster.cleanup()
     await project_general_manager.cleanup()
 
 

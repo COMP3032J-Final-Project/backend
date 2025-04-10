@@ -17,7 +17,7 @@ import redis.asyncio as aioredis
 from app.core.db import async_session
 from app.models.project.chat import ChatMessageType, ChatMessageData
 from app.models.project.websocket import (
-    EventType,
+    EventAction,
     EventScope,
     BroadcastMessage,
     BroadcastErrorMessage,
@@ -30,6 +30,8 @@ import base64
 
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
+
+from aspubsub import GeneralPurposePubSubManager, DumbBroadcaster
 
 # logger.disable(__name__)
 
@@ -709,7 +711,7 @@ class ProjectGeneralManager(WebsocketConnManager):
 
                 # 分发消息
                 event_scope = EventScope(event_scope)
-                event_type = EventType(event_type)
+                event_type = EventAction(event_type)
                 await self.mediator.dispatch_message(channel, event_scope, event_type, client_id, data)
         except Exception as e:
             if client_id and action:
@@ -745,12 +747,12 @@ class ClientMessageMediator:
         self.connection_manager = connection_manager
         self.handlers = {}
 
-    def register_handler(self, event_scope: EventScope, event_type: EventType, handler: Callable):
+    def register_handler(self, event_scope: EventScope, event_type: EventAction, handler: Callable):
         """注册处理器"""
         self.handlers[(event_scope, event_type)] = handler
 
     async def dispatch_message(
-        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+        self, channel: str, event_scope: EventScope, event_type: EventAction, client_id: str, data: Any
     ):
         """分发消息"""
         handler_key = (event_scope, event_type)
@@ -787,11 +789,11 @@ class ClientMessageHandler(ABC):
 
 class ChatHandler(ClientMessageHandler):
     def _register_handlers(self):
-        self.mediator.register_handler(EventScope.CHAT, EventType.MESSAGE_SENT, self.handle_message_sent)
+        self.mediator.register_handler(EventScope.CHAT, EventAction.MESSAGE_SENT, self.handle_message_sent)
         # TODO 添加其他message_type
 
     async def handle_message_sent(
-        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+        self, channel: str, event_scope: EventScope, event_type: EventAction, client_id: str, data: Any
     ):
         """
         处理发送消息事件
@@ -860,11 +862,11 @@ class ChatHandler(ClientMessageHandler):
 
 class ProjectHandler(ClientMessageHandler):
     def _register_handlers(self):
-        self.mediator.register_handler(EventScope.PROJECT, EventType.PROJECT_UPDATED, self.handle_project_updated)
-        self.mediator.register_handler(EventScope.PROJECT, EventType.PROJECT_DELETED, self.handle_project_deleted)
+        self.mediator.register_handler(EventScope.PROJECT, EventAction.PROJECT_UPDATED, self.handle_project_updated)
+        self.mediator.register_handler(EventScope.PROJECT, EventAction.PROJECT_DELETED, self.handle_project_deleted)
 
     async def handle_project_updated(
-        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+        self, channel: str, event_scope: EventScope, event_type: EventAction, client_id: str, data: Any
     ):
         # try:
         #     updated_message = ClientMessage(
@@ -881,7 +883,7 @@ class ProjectHandler(ClientMessageHandler):
         pass
 
     async def handle_project_deleted(
-        self, channel: str, event_scope: EventScope, event_type: EventType, client_id: str, data: Any
+        self, channel: str, event_scope: EventScope, event_type: EventAction, client_id: str, data: Any
     ):
         try:
             deleted_message = BroadcastMessage(
@@ -895,59 +897,6 @@ class ProjectHandler(ClientMessageHandler):
         except Exception as e:
             logger.error(f"Error handling project deleted: {e}")
             raise
-
-
-class DumbBroadcaster(WebsocketConnManager):
-    """Simple broadcaster that forwards messages to all subscribed clients"""
-
-    def __init__(self, url, batch_interval: float = 0.04, **kwargs):  # 25 fps
-        super().__init__(url, batch_interval=batch_interval, **kwargs)
-
-    async def _process_pubsub_message(self, channel: str, message: Any):
-        # Get clients subscribed to this channel
-        client_ids = [cid for cid, channels in self.client_channels.items() if channel in channels]
-        if not client_ids:
-            return
-
-        message = message["data"]
-
-        try:
-            message = orjson.loads(message)
-        except orjson.JSONDecodeError:
-            logger.warning(f"Failed to parse message as JSON: {message[:100]}")
-            return
-
-        nested_message = message.get("message", None)
-        if isinstance(nested_message, str):
-            try:
-                message["message"] = orjson.loads(nested_message)
-            except orjson.JSONDecodeError:
-                # possibly base64 encoded bytes or plain text
-                pass
-
-        serialized_message = orjson.dumps(message)
-
-        # Send to all subscribed clients
-        send_tasks = []
-        for cid in client_ids:
-            if cid in self.active_connections:
-                websocket = self.active_connections[cid]
-                if hasattr(self, "batch_size") and self.batch_size > 1:
-                    await self.add_message_to_batch(cid, message)
-                else:
-                    send_tasks.append(websocket.send_text(serialized_message.decode()))
-
-        if send_tasks:
-            await asyncio.gather(*send_tasks)
-
-
-class CursorTrackingBroadcaster(DumbBroadcaster):
-    """
-    allow more frequent message broadcasting
-    """
-
-    def __init__(self, url, batch_interval: float = 0.025, **kwargs):  # 40 fps
-        super().__init__(url, batch_interval=batch_interval, **kwargs)
 
 
 # ==============================================================================

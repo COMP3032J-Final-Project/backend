@@ -16,6 +16,19 @@ from app.core.events import (
     configure_exception_handlers,
 )
 
+
+from loguru import logger
+import sys
+
+# --- Configure loguru ---
+logger.enable("aspubsub")
+if not settings.DEBUG:
+    # see https://github.com/Delgan/loguru/issues/138#issuecomment-1691531351
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
+
+
+    
 load_dotenv()
 
 

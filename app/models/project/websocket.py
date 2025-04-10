@@ -1,73 +1,102 @@
 from enum import Enum
-from typing import Any, Dict, Optional
-
-from app.models.base import Base
-
+from typing import Any, Union, Optional
+from typing_extensions import Self
+from pydantic import BaseModel, model_validator
 
 class EventScope(str, Enum):
-    """
-    事件范围
-    - project: 项目
-    - member: 成员
-    - file: 文件
-    - chat: 聊天
-    - error: 错误
-    """
-
     PROJECT = "project"
     MEMBER = "member"
     FILE = "file"
     CHAT = "chat"
-    ERROR = "error"
+    CRDT = "crdt"
+
+class ProjectAction(str, Enum):
+    DELETED_PROJECT = "deleted_project"
+    UPDATED_NAME = "updated_name"
+
+class MemberAction(str, Enum):
+    JOINED = "joined"
+    LEFT = "left"
+
+class FileAction(str, Enum):
+    ADDED = "added"
+    RENAMED = "renamed"
+    MOVED = "moved"
+    DELETED = "deleted"
+
+class ChatAction(str, Enum):
+    SEND_MESSAGE = "send_message"
+    # MESSAGE_EDITED = "message_edited"
+    # MESSAGE_WITHDRAWN = "message_withdrawn"
+
+class CRDTAction(str, Enum):
+    BROADCAST = "broadcast"
+
+EventAction = Union[
+    ProjectAction,
+    MemberAction,
+    FileAction,
+    ChatAction,
+    CRDTAction,
+]
+
+class BaseMessage(BaseModel):
+    """Base model containing common fields and validation logic."""
+    scope: EventScope
+    action: EventAction
+    payload: Any = None  # TODO add validation later
+
+    @model_validator(mode='after')
+    def action_must_match_scope(self) -> Self:
+        """Ensures the action is valid for the given scope."""
+        is_valid = False
+        scope_action_error = False
+        if self.scope == EventScope.PROJECT and isinstance(self.action, ProjectAction):
+            is_valid = True
+            scope_action_error = True
+        elif self.scope == EventScope.MEMBER and isinstance(self.action, MemberAction):
+            is_valid = True
+            scope_action_error = True
+        elif self.scope == EventScope.FILE and isinstance(self.action, FileAction):
+            is_valid = True
+            scope_action_error = True
+        elif self.scope == EventScope.CHAT and isinstance(self.action, ChatAction):
+            is_valid = True
+            scope_action_error = True
+        elif self.scope == EventScope.CRDT and isinstance(self.action, CRDTAction):
+            is_valid = True
+            scope_action_error = True
+
+        if not is_valid:
+            if scope_action_error:
+                raise ValueError(
+                    f"Action '{self.action}' (type: {type(self.action).__name__}) "
+                    f"is invalid for scope '{self.scope}'"
+                )
+            else:
+                raise ValueError("Validation Failed.")
+        return self
+    
+class Message(BaseMessage):
+    """Basic Message. Optionally associated with client_id."""
+    client_id: Optional[str] = None
+
+class ClientMessage(BaseMessage):
+    """Message with client_id."""
+    client_id: str
 
 
-class EventType(str, Enum):
-    """事件类型"""
-
-    # 项目相关
-    PROJECT_UPDATED = "project_updated"
-    PROJECT_DELETED = "project_deleted"
-
-    # 成员相关
-    MEMBER_ADDED = "member_added"
-    MEMBER_UPDATED = "member_updated"
-    MEMBER_REMOVED = "member_removed"
-    OWNERSHIP_TRANSFERRED = "ownership_transferred"
-    MEMBER_STATUS_CHANGED = "member_status_changed"
-
-    # 文件相关
-    FILE_ADDED = "file_added"
-    FILE_RENAMED = "file_renamed"
-    FILE_MOVED = "file_moved"
-    FILE_DELETED = "file_deleted"
-
-    # 聊天相关
-    MESSAGE_SENT = "message_sent"
-    MESSAGE_EDITED = "message_edited"
-    MESSAGE_WITHDRAWN = "message_withdrawn"
-
-
-class BroadcastErrorData(Base):
-    """错误数据模型"""
-
+    
+class ErrorMessage(BaseModel):
     code: int
     message: str
-    original_action: Optional[str] = None  # 原始action
 
+WrongInputMessageFormatErrorStr = ErrorMessage(
+    code = 1,
+    message = "Wrong input message format."
+).model_dump_json()
 
-class BroadcastMessage(Base):
-    """广播消息模型"""
-
-    event_type: Optional[EventType]
-    event_scope: Optional[EventScope]
-    channel: Optional[str] = None
-    client_id: Optional[str] = None
-    data: Dict[str, Any]
-
-
-class BroadcastErrorMessage(BroadcastMessage):
-    """错误消息模型"""
-
-    event_scope: EventScope = EventScope.ERROR
-    event_type: None = None
-    data: BroadcastErrorData
+ScopeNotAllowedErrorStr = ErrorMessage(
+    code = 2,
+    message = "Scope is not allowed."
+).model_dump_json()
