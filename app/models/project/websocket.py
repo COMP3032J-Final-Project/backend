@@ -3,6 +3,7 @@ from typing import Any, Union, Optional
 from typing_extensions import Self
 from pydantic import BaseModel, model_validator
 
+
 class EventScope(str, Enum):
     PROJECT = "project"
     MEMBER = "member"
@@ -10,13 +11,20 @@ class EventScope(str, Enum):
     CHAT = "chat"
     CRDT = "crdt"
 
+
 class ProjectAction(str, Enum):
-    DELETED_PROJECT = "deleted_project"
-    UPDATED_NAME = "updated_name"
+    DELETE_PROJECT = "deleted_project"
+    UPDATE_NAME = "updated_name"
+
 
 class MemberAction(str, Enum):
     JOINED = "joined"
     LEFT = "left"
+    ADD_MEMBER = "add_member"
+    UPDATE_MEMBER = "update_member"
+    REMOVE_MEMBER = "remove_member"
+    TRANSFER_OWNERSHIP = "transfer_ownership"
+
 
 class FileAction(str, Enum):
     ADDED = "added"
@@ -24,13 +32,16 @@ class FileAction(str, Enum):
     MOVED = "moved"
     DELETED = "deleted"
 
+
 class ChatAction(str, Enum):
     SEND_MESSAGE = "send_message"
     # MESSAGE_EDITED = "message_edited"
     # MESSAGE_WITHDRAWN = "message_withdrawn"
 
+
 class CRDTAction(str, Enum):
     BROADCAST = "broadcast"
+
 
 EventAction = Union[
     ProjectAction,
@@ -40,13 +51,15 @@ EventAction = Union[
     CRDTAction,
 ]
 
+
 class BaseMessage(BaseModel):
     """Base model containing common fields and validation logic."""
+
     scope: EventScope
     action: EventAction
     payload: Any = None  # TODO add validation later
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def action_must_match_scope(self) -> Self:
         """Ensures the action is valid for the given scope."""
         is_valid = False
@@ -76,27 +89,27 @@ class BaseMessage(BaseModel):
             else:
                 raise ValueError("Validation Failed.")
         return self
-    
+
+
 class Message(BaseMessage):
     """Basic Message. Optionally associated with client_id."""
+
     client_id: Optional[str] = None
+
 
 class ClientMessage(BaseMessage):
     """Message with client_id."""
+
     client_id: str
 
 
-    
 class ErrorMessage(BaseModel):
     code: int
     message: str
 
-WrongInputMessageFormatErrorStr = ErrorMessage(
-    code = 1,
-    message = "Wrong input message format."
-).model_dump_json()
 
-ScopeNotAllowedErrorStr = ErrorMessage(
-    code = 2,
-    message = "Scope is not allowed."
-).model_dump_json()
+WrongInputMessageFormatErrorStr = ErrorMessage(code=1, message="Wrong input message format.").model_dump_json()
+
+ScopeNotAllowedErrorStr = ErrorMessage(code=2, message="Scope is not allowed.").model_dump_json()
+
+ObjectNotFoundErrorStr = ErrorMessage(code=3, message="Object not found.").model_dump_json()
