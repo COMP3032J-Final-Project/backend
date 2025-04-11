@@ -13,8 +13,8 @@ class EventScope(str, Enum):
 
 
 class ProjectAction(str, Enum):
-    DELETE_PROJECT = "deleted_project"
-    UPDATE_NAME = "updated_name"
+    DELETE_PROJECT = "delete_project"
+    UPDATE_NAME = "update_name"
 
 
 class MemberAction(str, Enum):
