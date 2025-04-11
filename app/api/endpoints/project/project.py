@@ -188,13 +188,14 @@ async def delete_project(
     # 发送广播
     try:
         channel = get_project_channel_name(current_project.id)
-        await project_general_manager.publish(channel, Message(
-            scope = EventScope.PROJECT,
-            action = ProjectAction.DELETED_PROJECT,
-            payload = {
-                'project_id': str(current_project.id)
-            }
-        ).model_dump_json())
+        await project_general_manager.publish(
+            channel,
+            Message(
+                scope=EventScope.PROJECT,
+                action=ProjectAction.DELETE_PROJECT,
+                payload={"project_id": str(current_project.id)},
+            ).model_dump_json(),
+        )
     except Exception as e:
         logger.error(f"Failed to broadcast project deletion: {str(e)}")
 
