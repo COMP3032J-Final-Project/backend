@@ -135,6 +135,7 @@ class ProjectID(Base):
 
 
 class MemberInfo(Base):
+    user_id: uuid.UUID = Field(...)
     username: str = Field(..., max_length=255)
     email: EmailStr = Field(..., max_length=255)
     permission: ProjectPermission = Field(...)

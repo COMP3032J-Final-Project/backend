@@ -1,7 +1,7 @@
 from typing import Annotated
 import orjson
 
-from fastapi import APIRouter, Path, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_project, get_db, get_current_user_ws

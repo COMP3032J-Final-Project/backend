@@ -33,6 +33,7 @@ async def get_members(
     for member in members:
         if member.is_active:
             member_info = MemberInfo(
+                user_id=member.id,
                 username=member.username,
                 email=member.email,
                 permission=await ProjectDAO.get_project_permission(current_project, member, db),
@@ -62,6 +63,7 @@ async def get_member(
         raise HTTPException(status_code=404, detail="Member not found")
 
     member_info = MemberInfo(
+        user_id=target_user.id,
         username=target_user.username,
         email=target_user.email,
         permission=await ProjectDAO.get_project_permission(current_project, target_user, db),
