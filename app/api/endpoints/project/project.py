@@ -97,20 +97,18 @@ async def update_project(
         raise HTTPException(status_code=400, detail="Failed to update project")
 
     # # 发送广播
-    # try:
-    #     channel = str(updated_project.id)
-    #     project_info = await ProjectDAO.get_project_info(updated_project, db)
-    #     project_info_dict = project_info.model_dump(mode="json")
-
-    #     updated_message = {
-    #         "event_type": EventType.PROJECT_UPDATED,
-    #         "event_scope": EventScope.PROJECT,
-    #         "data": project_info_dict,
-    #     }
-
-    #     await project_general_manager.send_message(channel, updated_message, "system")
-    # except Exception as e:
-    #     logger.error(f"Failed to broadcast project update: {str(e)}")
+    try:
+        channel = get_project_channel_name(current_project.id)
+        await project_general_manager.publish(
+            channel,
+            Message(
+                scope=EventScope.PROJECT,
+                action=ProjectAction.DELETE_PROJECT,
+                payload={"project_id": str(current_project.id)},
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast project deletion: {str(e)}")
 
     return APIResponse(code=200, msg="Project updated")
 
@@ -150,22 +148,21 @@ async def delete_projects(
         project = await ProjectDAO.get_project_by_id(project_id, db)
         await ProjectDAO.delete_project(project, db)
 
-    # # 向被删除的全部项目发送广播
-    # try:
-    #     for project_id in project_ids:
-    #         await asyncio.sleep(5)
-    #         channel = str(project_id)
-    #         deleted_message = {
-    #             "event_scope": EventScope.PROJECT,
-    #             "event_type": EventType.PROJECT_DELETED,
-    #             "data": {
-    #                 "project_id": str(project_id),
-    #             },
-    #         }
-    #         await project_general_manager.publish_message(channel, deleted_message)
-
-    # except Exception as e:
-    #     logger.error(f"Failed to broadcast project deletion: {str(e)}")
+    # 向被删除的全部项目发送广播
+    try:
+        for project_id in project_ids:
+            channel = get_project_channel_name(project_id)
+            await project_general_manager.publish(
+                channel,
+                Message(
+                    client_id=str(current_user.id),
+                    scope=EventScope.PROJECT,
+                    action=ProjectAction.DELETE_PROJECT,
+                    payload={"project_id": str(project_id)},
+                ).model_dump_json(),
+            )
+    except Exception as e:
+        logger.error(f"Failed to broadcast project deletion: {str(e)}")
 
     return APIResponse(code=200, msg="Projects deleted")
 
@@ -191,6 +188,7 @@ async def delete_project(
         await project_general_manager.publish(
             channel,
             Message(
+                client_id=str(current_user.id),
                 scope=EventScope.PROJECT,
                 action=ProjectAction.DELETE_PROJECT,
                 payload={"project_id": str(current_project.id)},
