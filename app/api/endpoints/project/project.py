@@ -96,15 +96,16 @@ async def update_project(
     if updated_project is None:
         raise HTTPException(status_code=400, detail="Failed to update project")
 
-    # # 发送广播
+    # 发送广播
     try:
         channel = get_project_channel_name(current_project.id)
         await project_general_manager.publish(
             channel,
             Message(
+                client_id=str(current_user.id),
                 scope=EventScope.PROJECT,
-                action=ProjectAction.DELETE_PROJECT,
-                payload={"project_id": str(current_project.id)},
+                action=ProjectAction.UPDATE_NAME,
+                payload={"project_id": str(current_project.id), "name": updated_project.name},
             ).model_dump_json(),
         )
     except Exception as e:
