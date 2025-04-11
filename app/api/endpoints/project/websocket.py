@@ -77,10 +77,10 @@ async def project(
                 await websocket.send_text(ScopeNotAllowedErrorStr)
     except WebSocketDisconnect:
         await project_general_manager.disconnect(client_id)
-        await project_general_manager.publish(channel, orjson.dumps(ClientMessage(
+        await project_general_manager.publish(channel, ClientMessage(
             client_id = client_id,
             scope = EventScope.MEMBER,
             action = MemberAction.LEFT,
-        ).model_dump_json()))
+        ).model_dump_json())
         
         logger.debug(f"Client {client_id} disconnected from project {current_project.id}")
