@@ -50,6 +50,11 @@ async def get_file_download_url(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
+    # 检查文件是否存在于 R2
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    if not is_exists:
+        raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
+
     url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
 

@@ -104,14 +104,18 @@ class FileDAO:
         db:
             数据库
         """
+        try:
+            file.filename = file_create_update.filename
+            file.filepath = file_create_update.filepath
 
-        file.filename = file_create_update.filename
-        file.filepath = file_create_update.filepath
-
-        await db.add(file)
-        await db.commit()
-        await db.refresh(file)
-        return file
+            db.add(file)
+            await db.commit()
+            await db.refresh(file)
+            return file
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error moving file: {e}")
+            raise
 
     @staticmethod
     async def copy_file(
