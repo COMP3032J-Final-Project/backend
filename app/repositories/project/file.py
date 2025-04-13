@@ -126,7 +126,6 @@ class FileDAO:
     ) -> File:
         """
         复制文件
-
         """
         if not target_project:
             target_project = source_file.project
@@ -140,7 +139,7 @@ class FileDAO:
         await db.refresh(target_file)
         try:
             r2client.copy(
-                {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=target_file)},
+                {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
                 Bucket=settings.R2_BUCKET,
                 Key=FileDAO.get_remote_file_path(file=target_file),
             )

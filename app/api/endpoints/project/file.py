@@ -2,11 +2,9 @@ import logging
 import uuid
 from typing import Annotated
 
-from app.api.deps import (get_current_file, get_current_project,
-                          get_current_user, get_db)
+from app.api.deps import get_current_file, get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
-from app.models.project.file import (File, FileCreateUpdate,
-                                     FileUploadResponse, FileURL)
+from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.file import FileDAO
@@ -73,6 +71,11 @@ async def delete_file(
     is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to delete this file")
+
+    # 检查文件是否存在于 R2
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    if not is_exists:
+        raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
     try:
         if await FileDAO.delete_file(file=current_file, db=db):
@@ -143,6 +146,12 @@ async def mv(
     is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
+
+    # 检查文件是否存在于 R2
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    if not is_exists:
+        raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
+
     try:
         file = await FileDAO.move_file(file=current_file, file_create_update=file_create_update, db=db)
         return APIResponse(code=200, data=file, msg="success")
@@ -164,6 +173,12 @@ async def cp(
     is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
+
+    # 检查文件是否存在于 R2
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    if not is_exists:
+        raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
+
     try:
         file = await FileDAO.copy_file(
             source_file=current_file,
