@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 from app.models.project.chat import ChatMessageData, ChatMessageType
+from app.models.project.project import MemberInfo
 from app.models.project.websocket import (
     ChatAction,
     Message,
@@ -102,9 +103,17 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                     return
 
                 # 创建聊天消息数据
-                user_info = {"id": str(user.id), "username": user.username, "email": user.email}
+                user_info = MemberInfo(
+                    user_id=user.id,
+                    username=user.username,
+                    email=user.email,
+                    permission=await ProjectDAO.get_project_permission(project, user, db),
+                )
                 chat_message = ChatMessageData(
-                    message_type=message_type, content=content, timestamp=current_time, user=user_info
+                    message_type=message_type,
+                    content=content,
+                    timestamp=current_time,
+                    user=user_info.model_dump(mode="json"),
                 )
 
                 # 将消息保存到数据库
