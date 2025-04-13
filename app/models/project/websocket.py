@@ -10,6 +10,7 @@ class EventScope(str, Enum):
     FILE = "file"
     CHAT = "chat"
     CRDT = "crdt"
+    ERROR = "error"
 
 
 class ProjectAction(str, Enum):
@@ -56,12 +57,16 @@ class BaseMessage(BaseModel):
     """Base model containing common fields and validation logic."""
 
     scope: EventScope
-    action: EventAction
+    action: Optional[EventAction] = None  # error时填空，若有问题可改
     payload: Any = None  # TODO add validation later
 
     @model_validator(mode="after")
     def action_must_match_scope(self) -> Self:
         """Ensures the action is valid for the given scope."""
+        # 如果是错误消息，跳过验证
+        if self.scope == EventScope.ERROR:
+            return self
+
         is_valid = False
         scope_action_error = False
         if self.scope == EventScope.PROJECT and isinstance(self.action, ProjectAction):
@@ -103,13 +108,20 @@ class ClientMessage(BaseMessage):
     client_id: str
 
 
-class ErrorMessage(BaseModel):
+class ErrorPayload(BaseModel):
     code: int
     message: str
 
 
-WrongInputMessageFormatErrorStr = ErrorMessage(code=1, message="Wrong input message format.").model_dump_json()
+class ErrorMessage(BaseMessage):
+    scope: EventScope = EventScope.ERROR
+    payload: ErrorPayload
 
-ScopeNotAllowedErrorStr = ErrorMessage(code=2, message="Scope is not allowed.").model_dump_json()
 
-ObjectNotFoundErrorStr = ErrorMessage(code=3, message="Object not found.").model_dump_json()
+WrongInputMessageFormatErrorStr = ErrorMessage(
+    payload=ErrorPayload(code=1, message="Wrong input message format.")
+).model_dump_json()
+
+ScopeNotAllowedErrorStr = ErrorMessage(payload=ErrorPayload(code=2, message="Scope is not allowed.")).model_dump_json()
+
+ObjectNotFoundErrorStr = ErrorMessage(payload=ErrorPayload(code=3, message="Object not found.")).model_dump_json()

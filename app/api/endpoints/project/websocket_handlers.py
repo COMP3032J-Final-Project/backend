@@ -87,10 +87,14 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
 
             message_type = payload.get("message_type")
             content = payload.get("content")
-            message_type = ChatMessageType(message_type)
             timestamp = datetime.now()
+            try:
+                message_type = ChatMessageType(message_type)
+            except ValueError:
+                await self.send_to_client(client_id, WrongInputMessageFormatErrorStr)
+                return
 
-            if not message_type or not content:
+            if not content:
                 await self.send_to_client(client_id, WrongInputMessageFormatErrorStr)
                 return
 
