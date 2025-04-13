@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_project, get_db
 from app.models.base import APIResponse
-from app.models.project.chat import ChatRoomUpdate, ChatMessageData
+from app.models.project.chat import ChatRoomUpdate, ChatMessageInfo
 from app.models.project.project import Project
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
@@ -35,14 +35,14 @@ async def update_chat_room(
     return APIResponse(code=200, data=updated_chat_room, msg="success")
 
 
-@router.get("/history", response_model=APIResponse[List[ChatMessageData]])
+@router.get("/history", response_model=APIResponse[List[ChatMessageInfo]])
 async def get_chat_history(
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
     max_num: int,
     last_timestamp: Optional[str] = None,
-) -> APIResponse[List[ChatMessageData]]:
+) -> APIResponse[List[ChatMessageInfo]]:
     """获取聊天室历史消息"""
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_member:
@@ -63,7 +63,7 @@ async def get_chat_history(
     history_messages = []
     for message in messages:
         user = await UserDAO.get_user_by_id(message.sender_id, db)
-        chat_message = ChatMessageData(
+        chat_message = ChatMessageInfo(
             message_type=message.message_type,
             content=message.content,
             timestamp=message.created_at,

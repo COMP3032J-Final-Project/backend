@@ -12,7 +12,7 @@ from app.core.db import async_session
 from uuid import UUID
 
 from pydantic import ValidationError
-from app.models.project.chat import ChatMessageData, ChatMessageType
+from app.models.project.chat import ChatMessageInfo, ChatMessageType
 from app.models.project.project import MemberInfo
 from app.models.project.websocket import (
     ChatAction,
@@ -88,7 +88,7 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
             message_type = payload.get("message_type")
             content = payload.get("content")
             message_type = ChatMessageType(message_type)
-            current_time = datetime.now()
+            timestamp = datetime.now()
 
             if not message_type or not content:
                 await self.send_to_client(client_id, WrongInputMessageFormatErrorStr)
@@ -103,17 +103,17 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                     return
 
                 # 创建聊天消息数据
-                user_info = MemberInfo(
+                member_info = MemberInfo(
                     user_id=user.id,
                     username=user.username,
                     email=user.email,
                     permission=await ProjectDAO.get_project_permission(project, user, db),
                 )
-                chat_message = ChatMessageData(
+                chat_message_info = ChatMessageInfo(
                     message_type=message_type,
                     content=content,
-                    timestamp=current_time,
-                    user=user_info.model_dump(mode="json"),
+                    timestamp=timestamp,
+                    user=member_info,
                 )
 
                 # 将消息保存到数据库
@@ -123,7 +123,7 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                         content=content,
                         room_id=project.chat_room.id,
                         sender_id=uuid.UUID(client_id),
-                        created_at=current_time,
+                        created_at=timestamp,
                         db=db,
                     )
                     logger.info(f"Chat message from {client_id} stored in database")
@@ -135,7 +135,7 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                     client_id=client_id,
                     scope=EventScope.CHAT,
                     action=ChatAction.SEND_MESSAGE,
-                    payload=chat_message.model_dump(mode="json"),
+                    payload=chat_message_info.model_dump(),
                 )
 
                 # 广播消息给所有客户端

@@ -1,9 +1,11 @@
 from typing import Annotated, List
 
 from fastapi import APIRouter, HTTPException, Depends
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_project, get_current_user, get_db, get_target_user
+from app.api.endpoints.project.websocket_handlers import get_project_channel_name
 from app.models.base import APIResponse
 from app.models.project.project import (
     Project,
@@ -11,8 +13,10 @@ from app.models.project.project import (
     MemberPermission,
     MemberInfo,
 )
+from app.models.project.websocket import EventScope, MemberAction, Message
 from app.models.user import User
 from app.repositories.project.project import ProjectDAO
+from .websocket_handlers import project_general_manager, get_project_channel_name
 
 router = APIRouter()
 
@@ -102,6 +106,28 @@ async def add_member(
     elif is_current_admin and permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission to add admins")
 
+    # 发送广播
+    try:
+        channel = get_project_channel_name(current_project.id)
+
+        member_info = MemberInfo(
+            user_id=target_user.id,
+            username=target_user.username,
+            email=target_user.email,
+            permission=permission,
+        )
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.MEMBER,
+                action=MemberAction.ADD_MEMBER,
+                payload=member_info.model_dump(),
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast add member: {str(e)}")
+
     await ProjectDAO.add_member(current_project, target_user, permission, db)
     return APIResponse(code=200, msg="Member added")
 
@@ -135,6 +161,28 @@ async def remove_member(
         raise HTTPException(status_code=400, detail="User is not a member of the project")
 
     await ProjectDAO.remove_member(current_project, target_user, db)
+
+    # 发送广播
+    try:
+        channel = get_project_channel_name(current_project.id)
+
+        member_info = MemberInfo(
+            user_id=target_user.id,
+            username=target_user.username,
+            email=target_user.email,
+        )
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.MEMBER,
+                action=MemberAction.REMOVE_MEMBER,
+                payload=member_info.model_dump(),
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast remove member: {str(e)}")
+
     return APIResponse(code=200, msg="Member removed")
 
 
@@ -175,6 +223,29 @@ async def update_member(
     updated_member = await ProjectDAO.update_member(current_project, target_user, new_permission, db)
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to update member")
+
+    # 发送广播
+    try:
+        channel = get_project_channel_name(current_project.id)
+
+        member_info = MemberInfo(
+            user_id=target_user.id,
+            username=target_user.username,
+            email=target_user.email,
+            permission=updated_member.permission,
+        )
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.MEMBER,
+                action=MemberAction.UPDATE_MEMBER,
+                payload=member_info.model_dump(),
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast update member: {str(e)}")
+
     return APIResponse(code=200, msg="Member updated")
 
 
@@ -205,4 +276,35 @@ async def transfer_ownership(
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to transfer ownership")
     await ProjectDAO.remove_member(current_project, current_user, db)
+
+    # 发送广播
+    try:
+        channel = get_project_channel_name(current_project.id)
+
+        old_owner_info = MemberInfo(
+            user_id=current_user.id,
+            username=current_user.username,
+            email=current_user.email,
+        )
+        new_owner_info = MemberInfo(
+            user_id=target_user.id,
+            username=target_user.username,
+            email=target_user.email,
+            permission=ProjectPermission.OWNER,
+        )
+
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.MEMBER,
+                action=MemberAction.TRANSFER_OWNERSHIP,
+                payload={
+                    "old_owner": old_owner_info.model_dump(),
+                    "new_owner": new_owner_info.model_dump(),
+                },
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast transfer ownership: {str(e)}")
     return APIResponse(code=200, msg="Ownership transferred")

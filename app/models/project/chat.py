@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, List, Dict
+from typing import TYPE_CHECKING
 
 from sqlmodel import Field, Relationship
 
 from app.models.base import BaseDB, Base
+from app.models.project.project import MemberInfo
 
 if TYPE_CHECKING:
     from app.models.project.project import Project
@@ -104,7 +105,7 @@ class ChatRoomUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
 
 
-class ChatMessageData(Base):
+class ChatMessageInfo(Base):
     """
     聊天消息数据模型
     """
@@ -122,7 +123,7 @@ class ChatMessageData(Base):
         ...,
         sa_column_kwargs={"nullable": False},
     )
-    user: Dict[str, str] = Field(
+    user: MemberInfo = Field(
         ...,
         sa_column_kwargs={"nullable": False},
     )
