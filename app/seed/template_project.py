@@ -46,7 +46,7 @@ async def create_template_projects(db: AsyncSession) -> None:
         """ below this is executed everytime on startup
             假设：服务不经常重启
         """
-        for file in await ProjectDAO.get_files(project=template_project, db=db):
+        for file in await ProjectDAO.get_files(project=template_project):
             await FileDAO.delete_file(file=file, db=db)
 
         # this rests both local and remote to a "clean-slate"

@@ -32,7 +32,7 @@ async def list_files(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
-    files = await ProjectDAO.get_files(project=current_project, db=db)
+    files = await ProjectDAO.get_files(project=current_project)
     return APIResponse(code=200, data=files, msg="success")
 
 
@@ -100,7 +100,7 @@ async def create_update_file(
     return APIResponse(code=200, data=response_data, msg="success")
 
 
-@router.put("/{file_id:uuid}/exist", response_model=APIResponse[File])
+@router.get("/{file_id:uuid}/exist", response_model=APIResponse[File])
 async def check_file_exist(
     current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],

@@ -199,7 +199,7 @@ class ProjectDAO:
         return project_user
 
     @staticmethod
-    async def get_files(project: Project, db: AsyncSession) -> list[File]:
+    async def get_files(project: Project) -> list[File]:
         project_files = project.files
         return project_files
 
@@ -212,7 +212,7 @@ class ProjectDAO:
         """
         复制模板项目的文件到新项目(未完成)
         """
-        template_files = await ProjectDAO.get_files(template_project, db)
+        template_files = await ProjectDAO.get_files(template_project)
 
         # 复制文件
         for template_file in template_files:
