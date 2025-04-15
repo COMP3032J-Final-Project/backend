@@ -72,12 +72,12 @@ class ProjectDAO:
     @staticmethod
     async def update_project(project: Project, project_update: ProjectUpdate, db: AsyncSession) -> Optional[Project]:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
-        
+
         # 对于Project类型的项目，强制保持is_public为False
         if "is_public" in update_data and project.type == ProjectType.PROJECT and update_data["is_public"] is True:
             logger.warning("Project type cannot be public, forcing is_public to False in update_project")
             update_data["is_public"] = False
-            
+
         for field in update_data:
             setattr(project, field, update_data[field])
         try:
@@ -221,26 +221,25 @@ class ProjectDAO:
         return project_files
 
     @staticmethod
-    async def copy_template(
-        template_project: Project,
+    async def copy_project(
+        old_project: Project,
         new_project: Project,
         db: AsyncSession,
     ) -> None:
         """
-        复制模板项目的文件到新项目
+        复制项目(模板)项目的文件到新项目(模板)
         """
-        template_files = await ProjectDAO.get_files(template_project)
+        old_files = await ProjectDAO.get_files(old_project)
 
         # 复制文件
-        for template_file in template_files:
-            # 这样其实应该就可以了
+        for old_file in old_files:
             new_file = await FileDAO.copy_file(
-                source_file=template_file,
+                source_file=old_file,
                 target_project=new_project,
                 target_file_create_update=FileCreateUpdate(
-                    filename=template_file.filename,
-                    filepath=template_file.filepath,
+                    filename=old_file.filename,
+                    filepath=old_file.filepath,
                 ),
                 db=db,
             )
-            logger.info(f"Copied file {template_file.filename} to {new_file.filename}")
+            logger.info(f"Copied file {old_file.filename} to {new_file.filename}")

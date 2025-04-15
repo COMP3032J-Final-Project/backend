@@ -41,7 +41,7 @@ async def create_project(
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 
-@router.post("/create/{project_id:uuid}", response_model=APIResponse)
+@router.post("/{project_id:uuid}/create_project", response_model=APIResponse)
 async def create_project_from_template(
     project_create: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -57,13 +57,37 @@ async def create_project_from_template(
     if not is_public and not is_member:
         raise HTTPException(status_code=403, detail="No permission to create project from this template")
 
-    
+    project_create.type = ProjectType.PROJECT
     new_project = await ProjectDAO.create_project(project_create, db)
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
-    await ProjectDAO.copy_template(current_template, new_project, db)
+    await ProjectDAO.copy_project(current_template, new_project, db)
 
-    return APIResponse(code=200, msg="Project created")
+    return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="Project created")
+
+
+@router.post("/{project_id:uuid}/create_template", response_model=APIResponse)
+async def create_project_from_template(
+    project_create: ProjectCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """从项目创建模板"""
+    if current_project.type != ProjectType.PROJECT:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="No permission to create template from this project")
+
+    project_create.type = ProjectType.TEMPLATE
+    new_template = await ProjectDAO.create_project(project_create, db)
+    await ProjectDAO.add_member(new_template, current_user, ProjectPermission.OWNER, db)
+    await ChatDAO.create_chat_room(project_create.name, new_template.id, db)
+    await ProjectDAO.copy_project(current_project, new_template, db)
+
+    return APIResponse(code=200, data=ProjectID(project_id=new_template.id), msg="Template created")
 
 
 @router.get("/", response_model=APIResponse[List[ProjectInfo]])
