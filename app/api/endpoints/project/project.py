@@ -76,7 +76,7 @@ async def create_project_from_template(
     """从项目创建模板"""
     if current_project.type != ProjectType.PROJECT:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to create template from this project")
@@ -88,6 +88,29 @@ async def create_project_from_template(
     await ProjectDAO.copy_project(current_project, new_template, db)
 
     return APIResponse(code=200, data=ProjectID(project_id=new_template.id), msg="Template created")
+
+
+@router.post("/{project_id:uuid}/copy_project", response_model=APIResponse)
+async def copy_project(
+    current_user: Annotated[User, Depends(get_current_user)],
+    current_project: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """复制项目"""
+    if current_project.type != ProjectType.PROJECT:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="No permission to copy this project")
+
+    project_create = ProjectCreate(name=f"{current_project.name} Copy", type=ProjectType.PROJECT)
+    new_project = await ProjectDAO.create_project(project_create, db)
+    await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    await ChatDAO.create_chat_room(current_project.name, new_project.id, db)
+    await ProjectDAO.copy_project(current_project, new_project, db)
+
+    return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="Project copied")
 
 
 @router.get("/", response_model=APIResponse[List[ProjectInfo]])
