@@ -52,6 +52,7 @@ class ProjectDAO:
         project = Project(
             name=project_create.name,
             type=project_create.type,
+            is_public=project_create.is_public,
         )
         db.add(project)
         await db.commit()

@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Self
 
-from pydantic import EmailStr
+from loguru import logger
+from pydantic import EmailStr, model_validator
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship
 
@@ -51,6 +52,10 @@ class Project(BaseDB, table=True):
         default=ProjectType.PROJECT,
         sa_column_kwargs={"nullable": False},
     )
+    is_public: bool = Field(
+        default=False,
+        sa_column_kwargs={"nullable": False},
+    )
     users: list["ProjectUser"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
@@ -64,6 +69,14 @@ class Project(BaseDB, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
+
+    # 若type为Project，则is_public必须为False
+    @model_validator(mode="after")
+    def validate_is_public(self) -> Self:
+        if self.type == ProjectType.PROJECT:
+            logger.warning("Project is public, setting is_public to False")
+            self.is_public = False
+        return self
 
     def __repr__(self) -> str:
         return f"<Project name={self.name} owner_id={self.owner_id}>"
@@ -102,10 +115,12 @@ class ProjectUser(BaseDB, table=True):
 class ProjectCreate(Base):
     name: str = Field(..., max_length=255)
     type: ProjectType = Field(...)
+    is_public: bool = Field(default=False)
 
 
 class ProjectUpdate(Base):
     name: str | None = Field(default=None, max_length=255)
+    is_public: bool | None = Field(default=None)
 
 
 class ProjectsDelete(Base):

@@ -115,7 +115,7 @@ async def get_current_project(
     # 验证项目ID
     project = await ProjectDAO.get_project_by_id(project_id, db)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail="Project|Template not found")
 
     return project
 

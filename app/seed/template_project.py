@@ -36,7 +36,7 @@ async def create_template_projects(db: AsyncSession) -> None:
                 break
         else:  # for...else 中 else 只在没有break后运行
             """this is only executed on empty db"""
-            pc = ProjectCreate(name=project_name, type=ProjectType.TEMPLATE)
+            pc = ProjectCreate(name=project_name, type=ProjectType.TEMPLATE, is_public=True)
             template_project = await ProjectDAO.create_project(project_create=pc, db=db)
             await ProjectDAO.add_member(
                 project=template_project, user=admin_user, permission=ProjectPermission.OWNER, db=db
