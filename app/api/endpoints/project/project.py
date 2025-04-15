@@ -36,15 +36,34 @@ async def create_project(
     """创建新项目"""
     new_project = await ProjectDAO.create_project(project_create, db)
     await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
-    # 创建聊天室
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
 
-    # 若type为template，复制模板(未完成)
-    if project_create.type == ProjectType.TEMPLATE:
-        template_project = await ProjectDAO.get_project_by_name("simple article", db)
-        await ProjectDAO.copy_template(template_project, new_project, db)
-
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
+
+
+@router.post("/create/{template_id:uuid}", response_model=APIResponse)
+async def create_project_from_template(
+    project_create: ProjectCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    current_template: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """从模板创建项目"""
+    if current_template.type != ProjectType.TEMPLATE:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    is_public = current_template.is_public
+    is_member = await ProjectDAO.is_project_member(current_template, current_user, db)
+    if not is_public and not is_member:
+        raise HTTPException(status_code=403, detail="No permission to create project from this template")
+
+    
+    new_project = await ProjectDAO.create_project(project_create, db)
+    await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
+    await ProjectDAO.copy_template(current_template, new_project, db)
+
+    return APIResponse(code=200, msg="Project created")
 
 
 @router.get("/", response_model=APIResponse[List[ProjectInfo]])
@@ -198,4 +217,4 @@ async def delete_project(
     except Exception as e:
         logger.error(f"Failed to broadcast project deletion: {str(e)}")
 
-    return APIResponse(msg="Project deleted")
+    return APIResponse(code=200, msg="Project deleted")

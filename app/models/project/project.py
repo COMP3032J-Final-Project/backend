@@ -73,8 +73,8 @@ class Project(BaseDB, table=True):
     # 若type为Project，则is_public必须为False
     @model_validator(mode="after")
     def validate_is_public(self) -> Self:
-        if self.type == ProjectType.PROJECT:
-            logger.warning("Project is public, setting is_public to False")
+        if self.type == ProjectType.PROJECT and self.is_public:
+            logger.warning("Project type cannot be public, forcing is_public to False in Project model")
             self.is_public = False
         return self
 
@@ -114,8 +114,15 @@ class ProjectUser(BaseDB, table=True):
 
 class ProjectCreate(Base):
     name: str = Field(..., max_length=255)
-    type: ProjectType = Field(...)
+    type: ProjectType = Field(default=ProjectType.PROJECT)
     is_public: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def validate_type_and_is_public(self) -> Self:
+        if self.type == ProjectType.PROJECT and self.is_public:
+            logger.warning("Project type cannot be public, forcing is_public to False in ProjectCreate")
+            self.is_public = False
+        return self
 
 
 class ProjectUpdate(Base):

@@ -1,10 +1,19 @@
 import uuid
 from typing import Optional
 
+from loguru import logger
+
 from app.models.project.file import File, FileCreateUpdate
-from app.models.project.project import (OwnerInfo, Project, ProjectCreate,
-                                        ProjectInfo, ProjectPermission,
-                                        ProjectUpdate, ProjectUser)
+from app.models.project.project import (
+    OwnerInfo,
+    Project,
+    ProjectCreate,
+    ProjectInfo,
+    ProjectPermission,
+    ProjectUpdate,
+    ProjectUser,
+    ProjectType,
+)
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +58,7 @@ class ProjectDAO:
 
     @staticmethod
     async def create_project(project_create: ProjectCreate, db: AsyncSession) -> Project:
+        # ProjectCreate中的验证器已经保证了当type为Project时，is_public为False
         project = Project(
             name=project_create.name,
             type=project_create.type,
@@ -62,6 +72,12 @@ class ProjectDAO:
     @staticmethod
     async def update_project(project: Project, project_update: ProjectUpdate, db: AsyncSession) -> Optional[Project]:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
+        
+        # 对于Project类型的项目，强制保持is_public为False
+        if "is_public" in update_data and project.type == ProjectType.PROJECT and update_data["is_public"] is True:
+            logger.warning("Project type cannot be public, forcing is_public to False in update_project")
+            update_data["is_public"] = False
+            
         for field in update_data:
             setattr(project, field, update_data[field])
         try:
@@ -211,7 +227,7 @@ class ProjectDAO:
         db: AsyncSession,
     ) -> None:
         """
-        复制模板项目的文件到新项目(未完成)
+        复制模板项目的文件到新项目
         """
         template_files = await ProjectDAO.get_files(template_project)
 
@@ -227,3 +243,4 @@ class ProjectDAO:
                 ),
                 db=db,
             )
+            logger.info(f"Copied file {template_file.filename} to {new_file.filename}")
