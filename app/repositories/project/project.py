@@ -234,7 +234,7 @@ class ProjectDAO:
         # 复制文件
         for template_file in template_files:
             # 这样其实应该就可以了
-            new_file = FileDAO.copy_file(
+            new_file = await FileDAO.copy_file(
                 source_file=template_file,
                 target_project=new_project,
                 target_file_create_update=FileCreateUpdate(

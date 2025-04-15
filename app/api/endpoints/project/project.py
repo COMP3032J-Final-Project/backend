@@ -41,7 +41,7 @@ async def create_project(
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
 
 
-@router.post("/create/{template_id:uuid}", response_model=APIResponse)
+@router.post("/create/{project_id:uuid}", response_model=APIResponse)
 async def create_project_from_template(
     project_create: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
