@@ -256,7 +256,7 @@ class ProjectDAO:
         return project_files
 
     @staticmethod
-    async def copy_template(
+    async def copy_project(
         template_project: Project,
         new_project: Project,
         db: AsyncSession,
