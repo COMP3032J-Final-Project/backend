@@ -7,6 +7,7 @@ from typing import List
 from dotenv import load_dotenv
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings
+from pathlib import Path
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
     DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
 
     PUB_SUB_BACKEND_URL: str = os.getenv("HIVEY_B_PUB_SUB_BACKEND_URL", "memory://").strip()
+    CRDT_HANDLER_BACKEND_URL: str = os.getenv("HIVEY_B_CRDT_HANDLER_BACKEND_URL", "memory://").strip()
 
     # 管理员
     ADMIN_EMAIL: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
@@ -55,7 +57,9 @@ class Settings(BaseSettings):
     R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
     R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
 
-    TEMP_PATH: str = os.path.normpath(os.getenv("HIVEY_B_TEMP_PATH", "./temp"))
+    TEMP_PATH: Path = Path(os.path.normpath(os.getenv("HIVEY_B_TEMP_PATH", "./temp")))
+
+    TEMP_PROJECTS_PATH: Path = TEMP_PATH / "projects"
 
     try:
         os.mkdir(TEMP_PATH)

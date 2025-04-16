@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import settings
 from .db import engine
 from app.api.endpoints.project.websocket_handlers import project_general_manager
+from app.api.endpoints.project.crdt_handler import crdt_handler
 
 
 async def startup_handler() -> None:
@@ -24,6 +25,7 @@ async def startup_handler() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     await project_general_manager.initialize()
+    await crdt_handler.initialize()
 
     async for db in get_db():
         await create_default_admin(db)
@@ -35,6 +37,7 @@ async def shutdown_handler() -> None:
     应用关闭时的处理函数
     """
     await project_general_manager.cleanup()
+    await crdt_handler.cleanup()
 
 
 def configure_middleware(app: FastAPI) -> None:

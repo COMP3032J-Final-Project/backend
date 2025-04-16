@@ -1,7 +1,12 @@
+import logging
 from enum import Enum
-from typing import Any, Union, Optional
+from typing import Any, Union, Optional, Literal, Dict, Type
 from typing_extensions import Self
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, ValidationError
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 class EventScope(str, Enum):
@@ -10,8 +15,7 @@ class EventScope(str, Enum):
     FILE = "file"
     CHAT = "chat"
     CRDT = "crdt"
-    ERROR = "error"
-
+    Error = "error"
 
 class ProjectAction(str, Enum):
     DELETE_PROJECT = "delete_project"
@@ -36,14 +40,13 @@ class FileAction(str, Enum):
 
 class ChatAction(str, Enum):
     SEND_MESSAGE = "send_message"
-    # MESSAGE_EDITED = "message_edited"
-    # MESSAGE_WITHDRAWN = "message_withdrawn"
 
 
 class CRDTAction(str, Enum):
     BROADCAST = "broadcast"
 
 
+# Union of all possible action types
 EventAction = Union[
     ProjectAction,
     MemberAction,
@@ -52,59 +55,19 @@ EventAction = Union[
     CRDTAction,
 ]
 
-
-class BaseMessage(BaseModel):
-    """Base model containing common fields and validation logic."""
-
-    scope: EventScope
-    action: Optional[EventAction] = None  # error时填空，若有问题可改
-    payload: Any = None  # TODO add validation later
-
-    @model_validator(mode="after")
-    def action_must_match_scope(self) -> Self:
-        """Ensures the action is valid for the given scope."""
-        # 如果是错误消息，跳过验证
-        if self.scope == EventScope.ERROR:
-            return self
-
-        is_valid = False
-        scope_action_error = False
-        if self.scope == EventScope.PROJECT and isinstance(self.action, ProjectAction):
-            is_valid = True
-            scope_action_error = True
-        elif self.scope == EventScope.MEMBER and isinstance(self.action, MemberAction):
-            is_valid = True
-            scope_action_error = True
-        elif self.scope == EventScope.FILE and isinstance(self.action, FileAction):
-            is_valid = True
-            scope_action_error = True
-        elif self.scope == EventScope.CHAT and isinstance(self.action, ChatAction):
-            is_valid = True
-            scope_action_error = True
-        elif self.scope == EventScope.CRDT and isinstance(self.action, CRDTAction):
-            is_valid = True
-            scope_action_error = True
-
-        if not is_valid:
-            if scope_action_error:
-                raise ValueError(
-                    f"Action '{self.action}' (type: {type(self.action).__name__}) "
-                    f"is invalid for scope '{self.scope}'"
-                )
-            else:
-                raise ValueError("Validation Failed.")
-        return self
+# Mapping scopes to their valid action types
+SCOPE_ACTION_MAP: Dict[EventScope, Type[Enum]] = {
+    EventScope.PROJECT: ProjectAction,
+    EventScope.MEMBER: MemberAction,
+    EventScope.FILE: FileAction,
+    EventScope.CHAT: ChatAction,
+    EventScope.CRDT: CRDTAction,
+}
 
 
-class Message(BaseMessage):
-    """Basic Message. Optionally associated with client_id."""
-
-    client_id: Optional[str] = None
-
-
-class ClientMessage(BaseMessage):
-    """Message with client_id."""
-
+class CrdtPayload(BaseModel):
+    type: Union[Literal["update"], Literal["awareness"]]
+    data: str  # base64
     client_id: str
 
 
@@ -113,15 +76,65 @@ class ErrorPayload(BaseModel):
     message: str
 
 
-class ErrorMessage(BaseMessage):
-    scope: EventScope = EventScope.ERROR
+class BaseMessage(BaseModel):
+    scope: EventScope
+    action: Optional[EventAction] = None
+    payload: Any = None
+
+    @model_validator(mode="after")
+    def validate_scope_action_and_payload(self) -> Self:
+        """
+        NOTE in this method, it also trys to parse payload for specific event type/scope
+        """
+        if self.action is None:
+            raise ValueError(f"Action is required for scope '{self.scope}'")
+
+        expected_action_type = SCOPE_ACTION_MAP.get(self.scope)
+        if not expected_action_type or not isinstance(self.action, expected_action_type):
+            action_type_name = type(self.action).__name__
+            expected_name = expected_action_type.__name__ if expected_action_type else "None"
+            raise ValueError(
+                f"Action '{self.action}' (type: {action_type_name}) "
+                f"is invalid for scope '{self.scope}'. Expected type: {expected_name}."
+            )
+
+        if self.scope == EventScope.CRDT:
+             if not isinstance(self.payload, CrdtPayload):
+                try:
+                    self.payload = CrdtPayload.model_validate(self.payload)
+                except (ValidationError, TypeError) as e:
+                    raise ValueError(f"Invalid payload for scope '{self.scope}': {e}") from e
+
+        return self
+
+
+class Message(BaseMessage):
+    client_id: Optional[str] = None
+
+
+class ClientMessage(BaseMessage):
+    client_id: str
+
+
+class ErrorMessage(BaseModel):
+    scope: Literal[EventScope.Error] = EventScope.Error
+    action: None = None
     payload: ErrorPayload
 
 
+# Pre-defined error messages
 WrongInputMessageFormatErrorStr = ErrorMessage(
     payload=ErrorPayload(code=1, message="Wrong input message format.")
 ).model_dump_json()
 
-ScopeNotAllowedErrorStr = ErrorMessage(payload=ErrorPayload(code=2, message="Scope is not allowed.")).model_dump_json()
+ScopeNotAllowedErrorStr = ErrorMessage(
+    payload=ErrorPayload(code=2, message="Scope is not allowed.")
+).model_dump_json()
 
-ObjectNotFoundErrorStr = ErrorMessage(payload=ErrorPayload(code=3, message="Object not found.")).model_dump_json()
+ObjectNotFoundErrorStr = ErrorMessage(
+    payload=ErrorPayload(code=3, message="Object not found.")
+).model_dump_json()
+
+CrdtApplyUpdateErrorStr = ErrorMessage(
+    payload=ErrorPayload(code=4, message="Crdt apply update error.")
+).model_dump_json()

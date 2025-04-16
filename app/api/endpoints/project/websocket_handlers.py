@@ -20,18 +20,22 @@ from app.models.project.websocket import (
     EventScope,
     ObjectNotFoundErrorStr,
     WrongInputMessageFormatErrorStr,
+    CrdtApplyUpdateErrorStr,
+    CrdtPayload
 )
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
+from .crdt_handler import crdt_handler
 
 
 def get_project_channel_name(project_id: Union[str, UUID]):
     return f"project/{project_id}"
 
 
-def get_project_id(channel_name: str) -> uuid.UUID:
-    return uuid.UUID(channel_name.split("/")[-1])
+def get_project_id(channel_name: str) -> str:
+    return channel_name.split("/")[-1]
+
 
 
 class ProjectGeneralManager(GeneralPurposePubSubManager):
@@ -64,6 +68,8 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
         if not recipient_client_ids:
             return
 
+        project_id_str = get_project_id(concrete_channel)
+
         message_json = orjson.loads(message)
         client_id = message_json["client_id"]
         try:
@@ -79,6 +85,23 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                 # client is possible disconnected in this short time period
                 if cid in self.client_connection:
                     send_tasks.append(self.send_to_client(cid, message))
+
+            if parsed_message.scope == EventScope.CRDT:
+                payload = parsed_message.payload
+                if (
+                    isinstance(payload, CrdtPayload) # Already is. Cheat for type check
+                    and payload.type == "update"
+                ):
+                    try:
+                        await crdt_handler.receive_update(
+                            project_id_str,
+                            # FIXME file_id
+                            "example_file",
+                            parsed_message.payload.data
+                        )
+                    except Exception:
+                        await self.send_to_client(client_id, CrdtApplyUpdateErrorStr)
+                        pass
         else:
             payload = parsed_message.payload
             if not payload:
@@ -101,7 +124,7 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
             # 获取用户信息和项目信息
             async with async_session() as db:
                 user = await UserDAO.get_user_by_id(uuid.UUID(client_id), db)
-                project = await ProjectDAO.get_project_by_id(get_project_id(concrete_channel), db)
+                project = await ProjectDAO.get_project_by_id(uuid.UUID(project_id_str), db)
                 if not user or not project:
                     await self.send_to_client(client_id, ObjectNotFoundErrorStr)
                     return
