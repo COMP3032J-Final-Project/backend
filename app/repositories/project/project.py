@@ -5,6 +5,7 @@ from loguru import logger
 
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import (
+    MemberUpdate,
     OwnerInfo,
     Project,
     ProjectCreate,
@@ -43,9 +44,9 @@ class ProjectDAO:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_project_info(project: Project, db: AsyncSession) -> ProjectInfo:
+    async def get_project_info(project: Project, db: AsyncSession, user: User | None = None) -> ProjectInfo:
         """
-        包装项目信息
+        包装项目信息(通过是否传入user来决定是否包装is_favorite)
         """
         owner = await ProjectDAO.get_project_owner(project, db)
         owner_info = OwnerInfo.model_validate(owner)
@@ -54,6 +55,14 @@ class ProjectDAO:
         project_info = ProjectInfo.model_validate(project)
         project_info.owner = owner_info
         project_info.members_num = members_num
+
+        # 模板信息
+        if project.type == ProjectType.TEMPLATE:
+            project_info.favorite_num = await ProjectDAO.get_favorite_num(project, db)
+            if user is not None:
+                project_info.is_favorite = await ProjectDAO.is_project_favorite(project, user, db)
+
+        project_info = project_info.model_dump(exclude_unset=True, exclude_none=True)
         return project_info
 
     @staticmethod
@@ -194,7 +203,7 @@ class ProjectDAO:
     async def update_member(
         project: Project,
         user: User,
-        permission: ProjectPermission,
+        member_update: MemberUpdate,
         db: AsyncSession,
     ) -> Optional[ProjectUser]:
         query = select(ProjectUser).where(
@@ -205,7 +214,10 @@ class ProjectDAO:
         project_user = result.scalar_one_or_none()
         if project_user is None:
             return None
-        project_user.permission = permission
+
+        update_data = member_update.model_dump(exclude_unset=True, exclude_none=True)
+        for field in update_data:
+            setattr(project_user, field, update_data[field])
 
         try:
             await db.commit()
@@ -216,30 +228,54 @@ class ProjectDAO:
         return project_user
 
     @staticmethod
+    async def is_project_favorite(project: Project, user: User, db: AsyncSession) -> bool:
+        query = select(ProjectUser).where(
+            ProjectUser.project_id == project.id,
+            ProjectUser.user_id == user.id,
+        )
+        result = await db.execute(query)
+        project_user = result.scalar_one_or_none()
+
+        try:
+            return project_user.is_favorite
+        except AttributeError:
+            return False
+
+    @staticmethod
+    async def get_favorite_num(project: Project, db: AsyncSession) -> int:
+        query = select(ProjectUser).where(
+            ProjectUser.project_id == project.id,
+            ProjectUser.is_favorite == True,
+        )
+        result = await db.execute(query)
+        return len(result.scalars().all())
+
+    @staticmethod
     async def get_files(project: Project) -> list[File]:
         project_files = project.files
         return project_files
 
     @staticmethod
-    async def copy_project(
-        old_project: Project,
+    async def copy_template(
+        template_project: Project,
         new_project: Project,
         db: AsyncSession,
     ) -> None:
         """
-        复制项目(模板)项目的文件到新项目(模板)
+        复制模板项目的文件到新项目
         """
-        old_files = await ProjectDAO.get_files(old_project)
+        template_files = await ProjectDAO.get_files(template_project)
 
         # 复制文件
-        for old_file in old_files:
-            new_file = await FileDAO.copy_file(
-                source_file=old_file,
+        for template_file in template_files:
+            # 这样其实应该就可以了
+            new_file = FileDAO.copy_file(
+                source_file=template_file,
                 target_project=new_project,
                 target_file_create_update=FileCreateUpdate(
-                    filename=old_file.filename,
-                    filepath=old_file.filepath,
+                    filename=template_file.filename,
+                    filepath=template_file.filepath,
                 ),
                 db=db,
             )
-            logger.info(f"Copied file {old_file.filename} to {new_file.filename}")
+            logger.info(f"Copied file {template_file.filename} to {new_file.filename}")

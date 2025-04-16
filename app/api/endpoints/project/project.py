@@ -124,7 +124,7 @@ async def get_projects(
     # 包装项目信息
     projects_info = []
     for project in projects:
-        project_info = await ProjectDAO.get_project_info(project, db)
+        project_info = await ProjectDAO.get_project_info(project, db, user=current_user)
         projects_info.append(project_info)
     return APIResponse(code=200, data=projects_info, msg="success")
 
@@ -140,7 +140,7 @@ async def get_project(
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to access this project")
 
-    project_info = await ProjectDAO.get_project_info(current_project, db)
+    project_info = await ProjectDAO.get_project_info(current_project, db, user=current_user)
     return APIResponse(code=200, data=project_info, msg="success")
 
 

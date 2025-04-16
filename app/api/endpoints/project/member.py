@@ -8,10 +8,12 @@ from app.api.deps import get_current_project, get_current_user, get_db, get_targ
 from app.api.endpoints.project.websocket_handlers import get_project_channel_name
 from app.models.base import APIResponse
 from app.models.project.project import (
+    MemberUpdate,
     Project,
     ProjectPermission,
     MemberPermission,
     MemberInfo,
+    ProjectType,
 )
 from app.models.project.websocket import EventScope, MemberAction, Message
 from app.models.user import User
@@ -220,7 +222,9 @@ async def update_member(
     elif is_current_admin and new_permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission update to admin")
 
-    updated_member = await ProjectDAO.update_member(current_project, target_user, new_permission, db)
+    updated_member = await ProjectDAO.update_member(
+        current_project, target_user, MemberUpdate(permission=new_permission), db
+    )
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to update member")
 
@@ -272,7 +276,9 @@ async def transfer_ownership(
         raise HTTPException(status_code=400, detail="User is not a member of the project")
 
     # 将目标用户的权限设置为所有者
-    updated_member = await ProjectDAO.update_member(current_project, target_user, ProjectPermission.OWNER, db)
+    updated_member = await ProjectDAO.update_member(
+        current_project, target_user, MemberUpdate(permission=ProjectPermission.OWNER), db
+    )
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to transfer ownership")
     await ProjectDAO.remove_member(current_project, current_user, db)
@@ -308,3 +314,28 @@ async def transfer_ownership(
     except Exception as e:
         logger.error(f"Failed to broadcast transfer ownership: {str(e)}")
     return APIResponse(code=200, msg="Ownership transferred")
+
+
+@router.put("/favorite_template/", response_model=APIResponse)
+async def favorite_template(
+    current_user: Annotated[User, Depends(get_current_user)],
+    current_template: Annotated[Project, Depends(get_current_project)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse:
+    """收藏或取消收藏项目"""
+    is_template = current_template.type == ProjectType.TEMPLATE
+    if not is_template:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    is_member = await ProjectDAO.is_project_member(current_template, current_user, db)
+    if not is_member:
+        raise HTTPException(status_code=403, detail="No permission to favorite this template")
+
+    is_favorite = await ProjectDAO.is_project_favorite(current_template, current_user, db)
+    update_member = await ProjectDAO.update_member(
+        current_template, current_user, MemberUpdate(is_favorite=not is_favorite), db
+    )
+    if update_member is None:
+        return APIResponse(code=400, msg="Failed to update template favorite")
+
+    return APIResponse(code=200, data=update_member.is_favorite, msg="Template favorite updated")

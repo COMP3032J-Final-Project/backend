@@ -107,9 +107,15 @@ class ProjectUser(BaseDB, table=True):
         default=ProjectPermission.VIEWER,
         sa_column_kwargs={"nullable": False},
     )
+    is_favorite: bool = Field(
+        default=False,
+        sa_column_kwargs={"nullable": False},
+    )
 
     project: "Project" = Relationship(back_populates="users")
     user: "User" = Relationship(back_populates="projects")
+    
+    
 
 
 class ProjectCreate(Base):
@@ -148,6 +154,8 @@ class ProjectInfo(Base):
     type: ProjectType = Field(default=ProjectType.PROJECT)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    is_favorite: Optional[bool] = Field(default=None)
+    favorite_num: Optional[int] = Field(default=None)
     members_num: Optional[int] = Field(default=None)
     owner: Optional["OwnerInfo"] = Field(default=None)
 
@@ -161,6 +169,11 @@ class MemberInfo(Base):
     username: str = Field(..., max_length=255)
     email: EmailStr = Field(..., max_length=255)
     permission: Optional[ProjectPermission] = Field(default=None)
+
+
+class MemberUpdate(Base):
+    permission: ProjectPermission | None = Field(default=None)
+    is_favorite: bool | None = Field(default=None)
 
 
 class MemberPermission(Base):
