@@ -5,7 +5,7 @@ from loguru import logger
 
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import (
-    MemberUpdate,
+    MemberCreateUpdate,
     OwnerInfo,
     Project,
     ProjectCreate,
@@ -18,7 +18,7 @@ from app.models.project.project import (
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 
@@ -35,11 +35,14 @@ class ProjectDAO:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_projects(user: User, db: AsyncSession) -> list[Project]:
+    async def get_projects(user: User, db: AsyncSession, type: ProjectType | None = None) -> list[Project]:
         """
-        获取当前用户的所有项目
+        获取当前用户的所有项目(模板)
         """
-        query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id)
+        if type is None:
+            query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id)
+        else:
+            query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id, Project.type == type)
         result = await db.execute(query)
         return list(result.scalars().all())
 
@@ -60,10 +63,22 @@ class ProjectDAO:
         if project.type == ProjectType.TEMPLATE:
             project_info.favorite_num = await ProjectDAO.get_favorite_num(project, db)
             if user is not None:
-                project_info.is_favorite = await ProjectDAO.is_project_favorite(project, user, db)
+                project_info.is_favorite = await ProjectDAO.is_template_favorite(project, user, db)
 
         project_info = project_info.model_dump(exclude_unset=True, exclude_none=True)
         return project_info
+
+    @staticmethod
+    async def get_favorite_templates(user: User, db: AsyncSession) -> list[ProjectInfo]:
+        query = (
+            select(Project)
+            .join(ProjectUser)
+            .where(
+                Project.type == ProjectType.TEMPLATE, ProjectUser.user_id == user.id, ProjectUser.is_favorite == True
+            )
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
     async def create_project(project_create: ProjectCreate, db: AsyncSession) -> Project:
@@ -162,25 +177,44 @@ class ProjectDAO:
             ProjectUser.user_id == user.id,
         )
         result = await db.execute(query)
-        return result.first() is not None
+        project_user = result.scalar_one_or_none()
+        if project_user is None or project_user.permission == ProjectPermission.NON_MEMBER:
+            return False
+        return True
+
+    @staticmethod
+    async def is_non_member(project: Project, user: User, db: AsyncSession) -> bool:
+        """
+        判断用户是否为被数据库记录为非成员(并非所有非成员都会被记录)
+        """
+        return await ProjectDAO.get_project_permission(project, user, db) == ProjectPermission.NON_MEMBER
 
     @staticmethod
     async def get_members(
         project: Project,
         db: AsyncSession,
     ) -> list[User]:
-        query = select(User).join(ProjectUser).where(ProjectUser.project_id == project.id)
+        query = (
+            select(User)
+            .join(ProjectUser)
+            .where(ProjectUser.project_id == project.id, ProjectUser.permission != ProjectPermission.NON_MEMBER)
+        )
         result = await db.execute(query)
         return list(result.scalars().all())
 
     @staticmethod
     async def add_member(
+        member_create: MemberCreateUpdate,
         project: Project,
         user: User,
-        permission: ProjectPermission,
         db: AsyncSession,
     ) -> None:
-        project_user = ProjectUser(project_id=project.id, user_id=user.id, permission=permission)
+        project_user = ProjectUser(project_id=project.id, user_id=user.id)
+
+        create_data = member_create.model_dump(exclude_unset=True, exclude_none=True)
+        for field in create_data:
+            setattr(project_user, field, create_data[field])
+
         db.add(project_user)
         await db.commit()
 
@@ -203,7 +237,7 @@ class ProjectDAO:
     async def update_member(
         project: Project,
         user: User,
-        member_update: MemberUpdate,
+        member_update: MemberCreateUpdate,
         db: AsyncSession,
     ) -> Optional[ProjectUser]:
         query = select(ProjectUser).where(
@@ -228,7 +262,16 @@ class ProjectDAO:
         return project_user
 
     @staticmethod
-    async def is_project_favorite(project: Project, user: User, db: AsyncSession) -> bool:
+    async def remove_non_members(project: Project, db: AsyncSession) -> None:
+        delete_query = delete(ProjectUser).where(
+            ProjectUser.project_id == project.id,
+            ProjectUser.permission == ProjectPermission.NON_MEMBER,
+        )
+        await db.execute(delete_query)
+        await db.commit()
+
+    @staticmethod
+    async def is_template_favorite(project: Project, user: User, db: AsyncSession) -> bool:
         query = select(ProjectUser).where(
             ProjectUser.project_id == project.id,
             ProjectUser.user_id == user.id,

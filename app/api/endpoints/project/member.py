@@ -8,10 +8,10 @@ from app.api.deps import get_current_project, get_current_user, get_db, get_targ
 from app.api.endpoints.project.websocket_handlers import get_project_channel_name
 from app.models.base import APIResponse
 from app.models.project.project import (
-    MemberUpdate,
+    MemberCreateUpdate,
     Project,
     ProjectPermission,
-    MemberPermission,
+    ProjectPermissionData,
     MemberInfo,
     ProjectType,
 )
@@ -82,7 +82,7 @@ async def add_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
-    member_permission: MemberPermission,
+    member_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse:
     """
@@ -103,10 +103,12 @@ async def add_member(
 
     # 检查权限
     permission = ProjectPermission(member_permission.permission)
-    if permission == ProjectPermission.OWNER:
-        raise HTTPException(status_code=400, detail="Cannot add owner")
+    if permission == ProjectPermission.OWNER or permission == ProjectPermission.NON_MEMBER:
+        raise HTTPException(status_code=400, detail="Invalid permission")
     elif is_current_admin and permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission to add admins")
+
+    await ProjectDAO.add_member(MemberCreateUpdate(permission=permission), current_project, target_user, db)
 
     # 发送广播
     try:
@@ -130,7 +132,6 @@ async def add_member(
     except Exception as e:
         logger.error(f"Failed to broadcast add member: {str(e)}")
 
-    await ProjectDAO.add_member(current_project, target_user, permission, db)
     return APIResponse(code=200, msg="Member added")
 
 
@@ -193,7 +194,7 @@ async def update_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
-    new_permission: MemberPermission,
+    new_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse:
     """更新成员权限"""
@@ -217,13 +218,13 @@ async def update_member(
 
     # 检查权限
     new_permission = ProjectPermission(new_permission.permission)
-    if new_permission == ProjectPermission.OWNER:
-        raise HTTPException(status_code=400, detail="Cannot update to owner")
+    if new_permission == ProjectPermission.OWNER or new_permission == ProjectPermission.NON_MEMBER:
+        raise HTTPException(status_code=400, detail="Invalid permission")
     elif is_current_admin and new_permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission update to admin")
 
     updated_member = await ProjectDAO.update_member(
-        current_project, target_user, MemberUpdate(permission=new_permission), db
+        current_project, target_user, MemberCreateUpdate(permission=new_permission), db
     )
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to update member")
@@ -253,7 +254,6 @@ async def update_member(
     return APIResponse(code=200, msg="Member updated")
 
 
-# 转移当前项目所有人
 @router.put("/owner/{username:str}", response_model=APIResponse)
 async def transfer_ownership(
     target_user: Annotated[User, Depends(get_target_user)],
@@ -277,7 +277,7 @@ async def transfer_ownership(
 
     # 将目标用户的权限设置为所有者
     updated_member = await ProjectDAO.update_member(
-        current_project, target_user, MemberUpdate(permission=ProjectPermission.OWNER), db
+        current_project, target_user, MemberCreateUpdate(permission=ProjectPermission.OWNER), db
     )
     if updated_member is None:
         return APIResponse(code=400, msg="Failed to transfer ownership")
@@ -322,20 +322,30 @@ async def favorite_template(
     current_template: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse:
-    """收藏或取消收藏项目"""
+    """收藏或取消收藏模板"""
     is_template = current_template.type == ProjectType.TEMPLATE
     if not is_template:
         raise HTTPException(status_code=400, detail="Template not found")
 
+    # 检查权限
+    is_public = current_template.is_public
     is_member = await ProjectDAO.is_project_member(current_template, current_user, db)
-    if not is_member:
+    is_non_member = await ProjectDAO.is_non_member(current_template, current_user, db)
+    if not is_member and not is_public:
+        # 非成员且非公开，无权限收藏
         raise HTTPException(status_code=403, detail="No permission to favorite this template")
+    elif is_member or is_non_member:
+        # 成员或非成员曾收藏过，更新收藏状态
+        is_favorite = await ProjectDAO.is_template_favorite(current_template, current_user, db)
+        favorite_user = await ProjectDAO.update_member(
+            current_template,
+            current_user,
+            MemberCreateUpdate(is_favorite=not is_favorite),
+            db,
+        )
+    else:
+        # 非成员且未收藏，添加收藏
+        favorite_user = MemberCreateUpdate(permission=ProjectPermission.NON_MEMBER, is_favorite=True)
+        await ProjectDAO.add_member(favorite_user, current_template, current_user, db)
 
-    is_favorite = await ProjectDAO.is_project_favorite(current_template, current_user, db)
-    update_member = await ProjectDAO.update_member(
-        current_template, current_user, MemberUpdate(is_favorite=not is_favorite), db
-    )
-    if update_member is None:
-        return APIResponse(code=400, msg="Failed to update template favorite")
-
-    return APIResponse(code=200, data=update_member.is_favorite, msg="Template favorite updated")
+    return APIResponse(code=200, data=favorite_user.is_favorite, msg="success")

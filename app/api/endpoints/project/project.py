@@ -1,4 +1,3 @@
-import asyncio
 from typing import Annotated, List
 
 from loguru import logger
@@ -6,11 +5,13 @@ from loguru import logger
 from app.api.deps import get_current_project, get_current_user, get_db
 from app.models.base import APIResponse
 from app.models.project.project import (
+    MemberCreateUpdate,
     Project,
     ProjectCreate,
     ProjectID,
     ProjectInfo,
     ProjectPermission,
+    ProjectTypeData,
     ProjectsDelete,
     ProjectType,
     ProjectUpdate,
@@ -35,7 +36,7 @@ async def create_project(
 ) -> APIResponse:
     """创建新项目"""
     new_project = await ProjectDAO.create_project(project_create, db)
-    await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    await ProjectDAO.add_member(MemberCreateUpdate(permission=ProjectPermission.OWNER), new_project, current_user, db)
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
 
     return APIResponse(code=200, data=ProjectID(project_id=new_project.id), msg="success")
@@ -59,7 +60,7 @@ async def create_project_from_template(
 
     project_create.type = ProjectType.PROJECT
     new_project = await ProjectDAO.create_project(project_create, db)
-    await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    await ProjectDAO.add_member(MemberCreateUpdate(permission=ProjectPermission.OWNER), new_project, current_user, db)
     await ChatDAO.create_chat_room(project_create.name, new_project.id, db)
     await ProjectDAO.copy_project(current_template, new_project, db)
 
@@ -67,7 +68,7 @@ async def create_project_from_template(
 
 
 @router.post("/{project_id:uuid}/create_template", response_model=APIResponse)
-async def create_project_from_template(
+async def create_template_from_project(
     project_create: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     current_project: Annotated[Project, Depends(get_current_project)],
@@ -83,7 +84,7 @@ async def create_project_from_template(
 
     project_create.type = ProjectType.TEMPLATE
     new_template = await ProjectDAO.create_project(project_create, db)
-    await ProjectDAO.add_member(new_template, current_user, ProjectPermission.OWNER, db)
+    await ProjectDAO.add_member(MemberCreateUpdate(permission=ProjectPermission.OWNER), new_template, current_user, db)
     await ChatDAO.create_chat_room(project_create.name, new_template.id, db)
     await ProjectDAO.copy_project(current_project, new_template, db)
 
@@ -106,7 +107,7 @@ async def copy_project(
 
     project_create = ProjectCreate(name=f"{current_project.name} Copy", type=ProjectType.PROJECT)
     new_project = await ProjectDAO.create_project(project_create, db)
-    await ProjectDAO.add_member(new_project, current_user, ProjectPermission.OWNER, db)
+    await ProjectDAO.add_member(MemberCreateUpdate(permission=ProjectPermission.OWNER), new_project, current_user, db)
     await ChatDAO.create_chat_room(current_project.name, new_project.id, db)
     await ProjectDAO.copy_project(current_project, new_project, db)
 
@@ -117,9 +118,13 @@ async def copy_project(
 async def get_projects(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    type_data: ProjectTypeData | None = None,
 ) -> APIResponse[List[ProjectInfo]]:
-    """获取当前用户的所有项目"""
-    projects = await ProjectDAO.get_projects(current_user, db)
+    """获取当前用户的所有项目(模板)"""
+    if type_data is None:
+        projects = await ProjectDAO.get_projects(current_user, db)
+    else:
+        projects = await ProjectDAO.get_projects(current_user, db, type=type_data.type)
 
     # 包装项目信息
     projects_info = []
@@ -135,13 +140,24 @@ async def get_project(
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """获取项目详情"""
+    """获取项目(模板)详情"""
+    is_public = current_project.is_public
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this project")
+    if not is_public and not is_member:
+        raise HTTPException(status_code=403, detail="No permission to access this project|template")
 
     project_info = await ProjectDAO.get_project_info(current_project, db, user=current_user)
     return APIResponse(code=200, data=project_info, msg="success")
+
+
+@router.get("/favorite_templates/", response_model=APIResponse[List[ProjectInfo]])
+async def get_favorite_templates(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[ProjectInfo]]:
+    """获取当前用户收藏的模板"""
+    templates = await ProjectDAO.get_favorite_templates(current_user, db)
+    return APIResponse(code=200, data=templates, msg="success")
 
 
 @router.put("/{project_id:uuid}", response_model=APIResponse)
@@ -161,6 +177,13 @@ async def update_project(
     updated_project = await ProjectDAO.update_project(current_project, project_update, db)
     if updated_project is None:
         raise HTTPException(status_code=400, detail="Failed to update project")
+
+    # TODO 在Websocket中处理非用户成员访问公开模板
+    # 若模板被设置为非公开，则删除所有NON_MEMBER成员
+    is_template = current_project.type == ProjectType.TEMPLATE
+    is_public = updated_project.is_public
+    if is_template and not is_public:
+        await ProjectDAO.remove_non_members(current_project, db)
 
     # 发送广播
     try:

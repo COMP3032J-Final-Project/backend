@@ -25,6 +25,7 @@ class ProjectPermission(str, Enum):
     WRITER = "writer"
     ADMIN = "admin"
     OWNER = "owner"
+    NON_MEMBER = "non_member"  # 仅favorite但不是成员
 
 
 class ProjectType(str, Enum):
@@ -104,7 +105,7 @@ class ProjectUser(BaseDB, table=True):
         sa_column_kwargs={"nullable": False, "index": True},
     )
     permission: ProjectPermission = Field(
-        default=ProjectPermission.VIEWER,
+        default=ProjectPermission.NON_MEMBER,
         sa_column_kwargs={"nullable": False},
     )
     is_favorite: bool = Field(
@@ -114,8 +115,6 @@ class ProjectUser(BaseDB, table=True):
 
     project: "Project" = Relationship(back_populates="users")
     user: "User" = Relationship(back_populates="projects")
-    
-    
 
 
 class ProjectCreate(Base):
@@ -164,6 +163,10 @@ class ProjectID(Base):
     project_id: uuid.UUID = Field(..., description="The ID of the project")
 
 
+class ProjectTypeData(Base):
+    type: Optional[ProjectType] = Field(default=None)
+
+
 class MemberInfo(Base):
     user_id: uuid.UUID = Field(...)
     username: str = Field(..., max_length=255)
@@ -171,10 +174,10 @@ class MemberInfo(Base):
     permission: Optional[ProjectPermission] = Field(default=None)
 
 
-class MemberUpdate(Base):
+class MemberCreateUpdate(Base):
     permission: ProjectPermission | None = Field(default=None)
     is_favorite: bool | None = Field(default=None)
 
 
-class MemberPermission(Base):
+class ProjectPermissionData(Base):
     permission: ProjectPermission = Field(..., description="The permission of the member")
