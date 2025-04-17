@@ -209,16 +209,6 @@ async def get_project(
     return APIResponse(code=200, data=project_info, msg="success")
 
 
-@router.get("/favorite_templates/", response_model=APIResponse[List[ProjectInfo]])
-async def get_favorite_templates(
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIResponse[List[ProjectInfo]]:
-    """获取当前用户收藏的模板"""
-    templates = await ProjectDAO.get_favorite_templates(current_user, db)
-    return APIResponse(code=200, data=templates, msg="success")
-
-
 @router.put("/{project_id:uuid}", response_model=APIResponse)
 async def update_project(
     project_update: ProjectUpdate,
