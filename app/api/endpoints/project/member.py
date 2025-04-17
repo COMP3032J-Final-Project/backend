@@ -108,7 +108,11 @@ async def add_member(
     elif is_current_admin and permission == ProjectPermission.ADMIN:
         raise HTTPException(status_code=403, detail="No permission to add admins")
 
-    await ProjectDAO.add_member(MemberCreateUpdate(permission=permission), current_project, target_user, db)
+    old_permission = await ProjectDAO.get_project_permission(current_project, target_user, db)
+    if old_permission == ProjectPermission.NON_MEMBER:
+        await ProjectDAO.update_member(current_project, target_user, MemberCreateUpdate(permission=permission), db)
+    else:
+        await ProjectDAO.add_member(MemberCreateUpdate(permission=permission), current_project, target_user, db)
 
     # 发送广播
     try:

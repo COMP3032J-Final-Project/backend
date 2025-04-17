@@ -115,23 +115,82 @@ async def copy_project(
 
 
 @router.get("/", response_model=APIResponse[List[ProjectInfo]])
-async def get_projects(
+async def get_all_projects(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     type_data: ProjectTypeData | None = None,
 ) -> APIResponse[List[ProjectInfo]]:
-    """获取当前用户的所有项目(模板)"""
+    """获取当前用户参与的所有项目或模板"""
     if type_data is None:
-        projects = await ProjectDAO.get_projects(current_user, db)
+        projects = await ProjectDAO.get_all_projects(current_user, db)
     else:
-        projects = await ProjectDAO.get_projects(current_user, db, type=type_data.type)
+        projects = await ProjectDAO.get_all_projects(current_user, db, type=type_data.type)
 
-    # 包装项目信息
     projects_info = []
     for project in projects:
         project_info = await ProjectDAO.get_project_info(project, db, user=current_user)
         projects_info.append(project_info)
     return APIResponse(code=200, data=projects_info, msg="success")
+
+
+@router.get("/own/", response_model=APIResponse[List[ProjectInfo]])
+async def get_own_projects(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[ProjectInfo]]:
+    """获取当前用户为owner的所有项目"""
+    projects = await ProjectDAO.get_own_projects(current_user, db)
+
+    projects_info = []
+    for project in projects:
+        project_info = await ProjectDAO.get_project_info(project, db, user=current_user)
+        projects_info.append(project_info)
+    return APIResponse(code=200, data=projects_info, msg="success")
+
+
+@router.get("/shared/", response_model=APIResponse[List[ProjectInfo]])
+async def get_shared_projects(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[ProjectInfo]]:
+    """获取当前用户被邀请参与的所有项目"""
+    projects = await ProjectDAO.get_shared_projects(current_user, db)
+
+    projects_info = []
+    for project in projects:
+        project_info = await ProjectDAO.get_project_info(project, db, user=current_user)
+        projects_info.append(project_info)
+    return APIResponse(code=200, data=projects_info, msg="success")
+
+
+@router.get("/templates/", response_model=APIResponse[List[ProjectInfo]])
+async def get_templates(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[ProjectInfo]]:
+    """获取所有公开的模板"""
+    templates = await ProjectDAO.get_public_templates(db)
+
+    templates_info = []
+    for template in templates:
+        template_info = await ProjectDAO.get_project_info(template, db, user=current_user)
+        templates_info.append(template_info)
+    return APIResponse(code=200, data=templates_info, msg="success")
+
+
+@router.get("/favorite_templates/", response_model=APIResponse[List[ProjectInfo]])
+async def get_favorite_templates(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> APIResponse[List[ProjectInfo]]:
+    """获取当前用户收藏的模板"""
+    templates = await ProjectDAO.get_favorite_templates(current_user, db)
+
+    templates_info = []
+    for template in templates:
+        template_info = await ProjectDAO.get_project_info(template, db, user=current_user)
+        templates_info.append(template_info)
+    return APIResponse(code=200, data=templates_info, msg="success")
 
 
 @router.get("/{project_id:uuid}", response_model=APIResponse[ProjectInfo])
@@ -140,7 +199,7 @@ async def get_project(
     current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """获取项目(模板)详情"""
+    """获取指定项目(模板)详情"""
     is_public = current_project.is_public
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_public and not is_member:

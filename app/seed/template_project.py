@@ -5,8 +5,7 @@ import os
 import requests
 from app.core.config import settings
 from app.models.project.file import FileCreateUpdate
-from app.models.project.project import (MemberCreateUpdate, ProjectCreate, ProjectPermission,
-                                        ProjectType)
+from app.models.project.project import MemberCreateUpdate, ProjectCreate, ProjectPermission, ProjectType
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
@@ -23,7 +22,7 @@ async def create_template_projects(db: AsyncSession) -> None:
     if not admin_user:
         raise ValueError("Admin user cannot be located to attach template project to")
 
-    admin_projects = await ProjectDAO.get_projects(user=admin_user, db=db)
+    admin_projects = await ProjectDAO.get_all_projects(user=admin_user, db=db)
 
     for folder in os.scandir(os.path.normpath("./templates")):
         # initialize projects based on existing file structure
@@ -39,8 +38,7 @@ async def create_template_projects(db: AsyncSession) -> None:
             pc = ProjectCreate(name=project_name, type=ProjectType.TEMPLATE, is_public=True)
             template_project = await ProjectDAO.create_project(project_create=pc, db=db)
             await ProjectDAO.add_member(
-                MemberCreateUpdate(permission=ProjectPermission.OWNER),
-                project=template_project, user=admin_user, db=db
+                MemberCreateUpdate(permission=ProjectPermission.OWNER), project=template_project, user=admin_user, db=db
             )
             await ChatDAO.create_chat_room(name=pc.name, project_id=template_project.id, db=db)
 

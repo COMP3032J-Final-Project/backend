@@ -75,7 +75,7 @@ async def delete_user(
     # await db.delete(current_user)
     # await db.commit()
     # 检查用户是否有项目
-    projects = await ProjectDAO.get_projects(current_user, db)
+    projects = await ProjectDAO.get_all_projects(current_user, db)
     if projects:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User has projects, cannot be deleted")
 

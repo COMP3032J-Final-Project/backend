@@ -35,7 +35,7 @@ class ProjectDAO:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_projects(user: User, db: AsyncSession, type: ProjectType | None = None) -> list[Project]:
+    async def get_all_projects(user: User, db: AsyncSession, type: ProjectType | None = None) -> list[Project]:
         """
         获取当前用户的所有项目(模板)
         """
@@ -43,6 +43,62 @@ class ProjectDAO:
             query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id)
         else:
             query = select(Project).join(ProjectUser).where(ProjectUser.user_id == user.id, Project.type == type)
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_own_projects(user: User, db: AsyncSession) -> list[Project]:
+        """
+        获取当前用户为owner的所有项目
+        """
+        query = (
+            select(Project)
+            .join(ProjectUser)
+            .where(
+                Project.type == ProjectType.PROJECT,
+                ProjectUser.user_id == user.id,
+                ProjectUser.permission == ProjectPermission.OWNER,
+            )
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_shared_projects(user: User, db: AsyncSession) -> list[Project]:
+        """
+        获取当前用户被邀请参与的所有项目
+        """
+        query = (
+            select(Project)
+            .join(ProjectUser)
+            .where(
+                Project.type == ProjectType.PROJECT,
+                ProjectUser.user_id == user.id,
+                ProjectUser.permission != ProjectPermission.NON_MEMBER,
+                ProjectUser.permission != ProjectPermission.OWNER,
+            )
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_public_templates(db: AsyncSession) -> list[Project]:
+        """
+        获取所有公开的模板
+        """
+        query = select(Project).where(Project.type == ProjectType.TEMPLATE, Project.is_public == True)
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_favorite_templates(user: User, db: AsyncSession) -> list[ProjectInfo]:
+        query = (
+            select(Project)
+            .join(ProjectUser)
+            .where(
+                Project.type == ProjectType.TEMPLATE, ProjectUser.user_id == user.id, ProjectUser.is_favorite == True
+            )
+        )
         result = await db.execute(query)
         return list(result.scalars().all())
 
@@ -67,18 +123,6 @@ class ProjectDAO:
 
         project_info = project_info.model_dump(exclude_unset=True, exclude_none=True)
         return project_info
-
-    @staticmethod
-    async def get_favorite_templates(user: User, db: AsyncSession) -> list[ProjectInfo]:
-        query = (
-            select(Project)
-            .join(ProjectUser)
-            .where(
-                Project.type == ProjectType.TEMPLATE, ProjectUser.user_id == user.id, ProjectUser.is_favorite == True
-            )
-        )
-        result = await db.execute(query)
-        return list(result.scalars().all())
 
     @staticmethod
     async def create_project(project_create: ProjectCreate, db: AsyncSession) -> Project:
