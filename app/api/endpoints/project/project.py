@@ -101,8 +101,8 @@ async def copy_project(
     if current_project.type != ProjectType.PROJECT:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
-    if not is_owner:
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    if not is_member:
         raise HTTPException(status_code=403, detail="No permission to copy this project")
 
     project_create = ProjectCreate(name=f"{current_project.name} Copy", type=ProjectType.PROJECT)
