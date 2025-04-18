@@ -18,7 +18,7 @@ from app.models.project.project import (
 from app.models.project.websocket import EventScope, MemberAction, Message
 from app.models.user import User
 from app.repositories.project.project import ProjectDAO
-from .websocket_handlers import project_general_manager, get_project_channel_name
+from app.api.endpoints.project.websocket_handlers import project_general_manager, get_project_channel_name
 
 router = APIRouter()
 
