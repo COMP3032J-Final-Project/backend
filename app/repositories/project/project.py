@@ -355,7 +355,11 @@ class ProjectDAO:
 
         # 复制文件
         for template_file in template_files:
-            # 这样其实应该就可以了
+            is_exist = await FileDAO.check_file_exist_in_r2(template_file)
+            if not is_exist:
+                logger.warning(f"File {template_file.filename} does not exist in R2, skipping copy.")
+                continue
+
             new_file = await FileDAO.copy_file(
                 source_file=template_file,
                 target_project=new_project,
