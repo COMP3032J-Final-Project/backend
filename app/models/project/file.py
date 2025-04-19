@@ -1,6 +1,5 @@
 import uuid
-from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from app.models.base import Base, BaseDB
 from sqlmodel import Field, Relationship
@@ -10,8 +9,8 @@ if TYPE_CHECKING:
 
 
 class FileCreateUpdate(Base):
-    filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})
-    filepath: str = Field(..., max_length=1024, sa_column_kwargs={"nullable": False})
+    filename: Optional[str] = Field(default=None, max_length=255, sa_column_kwargs={"nullable": False, "index": True})
+    filepath: Optional[str] = Field(default=None, max_length=1024, sa_column_kwargs={"nullable": False})
 
 
 class FileURL(Base):

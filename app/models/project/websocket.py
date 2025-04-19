@@ -37,7 +37,6 @@ class FileAction(str, Enum):
     MOVED = "moved"
     DELETED = "deleted"
 
-
 class ChatAction(str, Enum):
     SEND_MESSAGE = "send_message"
 

@@ -23,6 +23,16 @@ def force_posix(path: str) -> str:
     return PureWindowsPath(os.path.normpath(PureWindowsPath(path).as_posix())).as_posix()
 
 
+def get_copy_filename(filename: str) -> str:
+    """
+    拆分文件名和后缀，并在后缀前添加"Copy"
+    """
+    name_parts = filename.rsplit(".", 1)
+    if len(name_parts) > 1:
+        return f"{name_parts[0]} Copy.{name_parts[1]}"
+    return f"{filename} Copy"
+
+
 class FileDAO:
     """
     Notes
@@ -44,9 +54,14 @@ class FileDAO:
         File, str:
             文件（新建或查找到的，对应上传/覆写URL）
         """
-        file = await FileDAO.get_file_by_path(
-            project_id=project.id, filepath=file_create_update.filepath, filename=file_create_update.filename, db=db
-        )
+        try:
+            file = await FileDAO.get_file_by_path(
+                project_id=project.id, filepath=file_create_update.filepath, filename=file_create_update.filename, db=db
+            )
+        except Exception as e:
+            logger.error(f"Error getting file by path: {e}")
+            raise
+
         if not file:
             """
             文件不存在->增
@@ -105,8 +120,8 @@ class FileDAO:
             数据库
         """
         try:
-            file.filename = file_create_update.filename
-            file.filepath = file_create_update.filepath
+            file.filename = file_create_update.filename if file_create_update.filename else file.filename
+            file.filepath = file_create_update.filepath if file_create_update.filepath else file.filepath
 
             db.add(file)
             await db.commit()
@@ -129,9 +144,10 @@ class FileDAO:
         """
         if not target_project:
             target_project = source_file.project
+
         target_file = File(
-            filename=target_file_create_update.filename,
-            filepath=target_file_create_update.filepath,
+            filename=get_copy_filename(source_file.filename),
+            filepath=target_file_create_update.filepath if target_file_create_update.filepath else source_file.filepath,
             project_id=target_project.id,
         )
         db.add(target_file)

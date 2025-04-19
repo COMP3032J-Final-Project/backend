@@ -3,9 +3,11 @@ import uuid
 from typing import Annotated
 
 from app.api.deps import get_current_file, get_current_project, get_current_user, get_db
+from app.api.endpoints.project.websocket_handlers import get_project_channel_name, project_general_manager
 from app.models.base import APIResponse
 from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL
 from app.models.project.project import Project
+from app.models.project.websocket import EventScope, FileAction, Message
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
@@ -79,6 +81,17 @@ async def delete_file(
 
     try:
         if await FileDAO.delete_file(file=current_file, db=db):
+            # 广播
+            channel = get_project_channel_name(current_file.project.id)
+            await project_general_manager.publish(
+                channel,
+                Message(
+                    client_id=str(current_user.id),
+                    scope=EventScope.FILE,
+                    action=FileAction.DELETED,
+                    payload=current_file.model_dump(),
+                ).model_dump_json(),
+            )
             return APIResponse(code=200, msg="success")
 
     except Exception as e:
@@ -110,7 +123,6 @@ async def create_update_file(
 
 @router.get("/{file_id:uuid}/exist", response_model=APIResponse[File])
 async def check_file_exist(
-    current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -119,14 +131,30 @@ async def check_file_exist(
     确认文件已上传到R2
     """
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于R2
     is_exists = await FileDAO.check_file_exist_in_r2(current_file)
     if is_exists:
+
+        # 广播
+        try:
+            channel = get_project_channel_name(current_file.project.id)
+            await project_general_manager.publish(
+                channel,
+                Message(
+                    client_id=str(current_user.id),
+                    scope=EventScope.FILE,
+                    action=FileAction.ADDED,
+                    payload=current_file.model_dump(),
+                ).model_dump_json(),
+            )
+        except Exception as e:
+            logger.error(f"Failed to broadcast file added: {str(e)}")
+
         return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
 
     raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
@@ -135,15 +163,14 @@ async def check_file_exist(
 @router.put("/{file_id:uuid}/mv", response_model=APIResponse[File])
 async def mv(
     file_create_update: FileCreateUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
@@ -154,23 +181,39 @@ async def mv(
 
     try:
         file = await FileDAO.move_file(file=current_file, file_create_update=file_create_update, db=db)
-        return APIResponse(code=200, data=file, msg="success")
     except Exception as error:
         return APIResponse(code=500, detail=f"{error}")
+
+    # 广播
+    try:
+        file_action = FileAction.MOVED if file_create_update.filepath else FileAction.RENAMED
+        channel = get_project_channel_name(current_file.project.id)
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.FILE,
+                action=file_action,
+                payload=file.model_dump(),
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast move file: {str(e)}")
+
+    return APIResponse(code=200, data=file, msg="success")
 
 
 @router.put("/{file_id:uuid}/cp", response_model=APIResponse[File])
 async def cp(
     file_create_update: FileCreateUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
     current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> APIResponse[File]:
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
@@ -183,12 +226,28 @@ async def cp(
         file = await FileDAO.copy_file(
             source_file=current_file,
             target_file_create_update=file_create_update,
-            target_project=current_project,
+            target_project=current_file.project,
             db=db,
         )
-        return APIResponse(code=200, data=file, msg="success")
     except Exception as error:
         return APIResponse(code=500, detail=f"{error}")
+
+    # 广播
+    try:
+        channel = get_project_channel_name(current_file.project.id)
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.FILE,
+                action=FileAction.ADDED,
+                payload=file.model_dump(),
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast copy file: {str(e)}")
+
+    return APIResponse(code=200, data=file, msg="success")
 
 
 @router.put("/{file_id:uuid}/test", response_model=APIResponse)
