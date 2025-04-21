@@ -1,4 +1,3 @@
-import logging
 import uuid
 from typing import Annotated
 
@@ -13,10 +12,12 @@ from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel.ext.asyncio.session import AsyncSession
+from loro import ExportMode, VersionVector
+from base64 import b64decode, b64encode
+from .crdt_handler import crdt_handler
+from loguru import logger
 
 router = APIRouter()
-
-logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=APIResponse[File])
@@ -53,6 +54,32 @@ async def get_file_download_url(
 
     url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
+
+@router.get("/{file_id:uuid}/crdt", response_model=APIResponse[str])
+async def get_file_crdt_missing_ops(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    opLogVersion: str,  # base64 string
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
+):
+    # 检查文件是否存在于 R2
+    current_file = await get_current_file(current_user, project_id, file_id, db)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    if not is_exists:
+        raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
+
+    doc = await crdt_handler.get_doc(str(current_file.id))
+    try:
+        vv = VersionVector.decode(b64decode(opLogVersion))
+    except:
+        raise HTTPException(status_code=400, detail="Version vector decode error.")
+
+
+    raw_updates = doc.export(ExportMode.Updates(vv))
+    updates = b64encode(raw_updates)
+    return APIResponse(code=200, data=updates, msg="success")
+
 
 
 @router.delete("/{file_id:uuid}", response_model=APIResponse[File])
@@ -271,7 +298,7 @@ async def test_remote_file_path(
 ):
     file = await FileDAO.get_file_by_id(file_id=file_id, db=db)
     if file:
-        filepath = FileDAO.get_remote_file_path(file=file)
+        filepath = FileDAO.get_remote_file_path(file.id)
         return APIResponse(code=200, data=filepath, msg="success")
     else:
         return APIResponse(code=404, msg="file does not exist in db.")

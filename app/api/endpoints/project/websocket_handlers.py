@@ -93,11 +93,11 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
                     and payload.type == "update"
                 ):
                     try:
+                        data = parsed_message.payload.data
                         await crdt_handler.receive_update(
                             project_id_str,
-                            # FIXME file_id
-                            "example_file",
-                            parsed_message.payload.data
+                            data.file_id,
+                            data.data
                         )
                     except Exception:
                         await self.send_to_client(client_id, CrdtApplyUpdateErrorStr)

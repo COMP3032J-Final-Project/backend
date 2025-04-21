@@ -12,6 +12,7 @@ from app.models.project.project import Project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from io import BytesIO
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -81,7 +82,7 @@ class FileDAO:
         try:
             response = r2client.generate_presigned_url(
                 "put_object",
-                Params={"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=file)},
+                Params={"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file.id)},
                 ExpiresIn=expiration,
             )
         except botocore.exceptions.ClientError as error:
@@ -159,9 +160,9 @@ class FileDAO:
         await db.refresh(target_file)
         try:
             r2client.copy(
-                {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file=source_file)},
+                {"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(source_file.id)},
                 Bucket=settings.R2_BUCKET,
-                Key=FileDAO.get_remote_file_path(file=target_file),
+                Key=FileDAO.get_remote_file_path(target_file.id),
             )
         except botocore.exceptions.ClientError as error:
             logger.error(error)
@@ -177,12 +178,12 @@ class FileDAO:
         return os.path.normpath(os.path.join(settings.TEMP_PATH, file.filepath, file.filename))
 
     @staticmethod
-    def get_remote_file_path(file: File) -> str:
+    def get_remote_file_path(file_id: str | uuid.UUID) -> str:
         """
         R2平台路径必须使用POSIX类路径
         返回格式: project/{project_id}/{filepath}/{filename}
         """
-        return force_posix(os.path.join("project", str(file.id)))
+        return force_posix(os.path.join("project", str(file_id)))
 
     @staticmethod
     async def rename_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
@@ -217,7 +218,7 @@ class FileDAO:
 
     @staticmethod
     async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
-        fp = FileDAO.get_remote_file_path(file=file)
+        fp = FileDAO.get_remote_file_path(file.id)
         response = ""
         try:
             response = r2client.generate_presigned_url(
@@ -235,7 +236,7 @@ class FileDAO:
         检查文件对应的远程资源是否在R2中存在
         """
         try:
-            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file=file))
+            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file.id))
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "404":
                 return False
@@ -243,6 +244,17 @@ class FileDAO:
             raise
         else:
             return True
+
+    @staticmethod
+    def update_r2_file(content: bytes, file_id: str | uuid.UUID) -> None:
+        """
+        File id is 
+        """
+        frp = FileDAO.get_remote_file_path(file_id)
+        try:
+            r2client.upload_fileobj(BytesIO(content), Bucket=settings.R2_BUCKET, Key=frp)
+        except botocore.exceptions.ClientError as error:
+            logger.error(error)
 
     # @staticmethod
     # async def push_file_to_r2(file: File, localpath: str = "") -> None:

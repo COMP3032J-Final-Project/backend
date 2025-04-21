@@ -1,4 +1,3 @@
-import asyncio
 from typing import Dict, Optional
 from app.core.config import settings
 from loguru import logger
@@ -9,6 +8,10 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 import redis.asyncio as aioredis
 from base64 import b64decode
+from fastapi import BackgroundTasks
+
+from app.repositories.project.file import FileDAO
+
 
 class CrdtBackend(ABC):
     """Abstract base class for CRDT document storage."""
@@ -131,8 +134,9 @@ class CrdtHandler:
         backend_url: Optional[str] = None,
         backend: Optional[CrdtBackend] = None,
         should_update_local_files: bool = False,
+        should_upload_to_r2: bool = False,
         lorocrdt_text_container_id: str = "codemirror",
-        temp_directory_path: Path = settings.TEMP_PROJECTS_PATH
+        temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
     ):
         if backend:
             self.backend = backend
@@ -143,14 +147,19 @@ class CrdtHandler:
                 self.backend = CrdtInMemoryBackend()
             else:
                 self.backend = CrdtRedisBackend(backend_url)
+                
+        self.lorocrdt_text_container_id = lorocrdt_text_container_id
+        self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
         self.temp_directory_path = temp_directory_path
-        self.lorocrdt_text_container_id = lorocrdt_text_container_id
-        
+        self.background_tasks = BackgroundTasks()
+                
         logger.info(f"Initialized CrdtHandler with backend: {type(backend).__name__}")
         logger.info(f"Local file updates {'enabled' if should_update_local_files else 'disabled'}")
+        logger.info(f"R2 uploads {'enabled' if self.should_upload_to_r2 else 'disabled'}") 
         if should_update_local_files:
-             logger.info(f"Temp directory for local files: {temp_directory_path}")
+            logger.info(f"Temp directory for local files: {temp_directory_path}")
+
 
     async def initialize(self):
         await self.backend.connect()
@@ -158,7 +167,16 @@ class CrdtHandler:
     async def cleanup(self):
         await self.backend.disconnect()
 
-    async def _update_local_file(self, project_id: str, file_id: str, doc: LoroDoc):
+    async def get_doc(self, file_id: str):
+        doc = await self.backend.get(file_id)
+        return doc
+    
+    async def _update_local_file(
+        self,
+        project_id: str,
+        file_id: str,
+        doc: LoroDoc
+    ):
         try:
             text_container = doc.get_text(self.lorocrdt_text_container_id)
             content = text_container.to_string()
@@ -181,7 +199,16 @@ class CrdtHandler:
         except Exception as e:
             logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
-    async def receive_update(self, project_id: str, file_id: str, raw_data: str) -> LoroDoc | None:
+    async def _upload_to_r2(self, file_id, doc: LoroDoc):
+        snapshot_bytes: bytes = doc.export(ExportMode.ShallowSnapshot(doc.state_frontiers))
+        logger.warning("hello")
+        FileDAO.update_r2_file(snapshot_bytes, file_id)
+
+    async def receive_update(
+        self, project_id: str,
+        file_id: str,
+        raw_data: str,
+    ) -> LoroDoc | None:
         """
         Receives a base64 data, decode it into loro-crdt binary, applies it using the backend,
         and optionally updates local files. Returns the updated doc or None on error.
@@ -189,11 +216,27 @@ class CrdtHandler:
         data = b64decode(raw_data)
         try:
             updated_doc = await self.backend.apply_update(file_id, data)
+            logger.debug(updated_doc.get_text(self.lorocrdt_text_container_id).to_string())
 
+            # Schedule background tasks IF content extraction was successful (or decide otherwise)
+            if self.should_update_local_files:
+                self.background_tasks.add_task(
+                    self._update_local_file,
+                    project_id,
+                    file_id,
+                    updated_doc
+                )
+                
+            if self.should_upload_to_r2:
+                self.background_tasks.add_task(
+                    self._upload_to_r2,
+                    file_id,
+                    updated_doc
+                )
+                
             if self.should_update_local_files and updated_doc:
-                 await self._update_local_file(project_id, file_id, updated_doc)
+                await self._update_local_file(project_id, file_id, updated_doc)
 
-            # logger.debug(updated_doc.get_text("codemirror").to_string())
 
             return updated_doc
 
@@ -202,4 +245,7 @@ class CrdtHandler:
             return None
 
 
-crdt_handler = CrdtHandler(backend_url=settings.CRDT_HANDLER_BACKEND_URL)
+crdt_handler = CrdtHandler(
+    backend_url=settings.CRDT_HANDLER_BACKEND_URL,
+    should_upload_to_r2=True
+)

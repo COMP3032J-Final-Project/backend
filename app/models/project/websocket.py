@@ -64,9 +64,14 @@ SCOPE_ACTION_MAP: Dict[EventScope, Type[Enum]] = {
 }
 
 
+class CrdtPayloadData(BaseModel):
+    file_id: str
+    data: str # base64
+
+
 class CrdtPayload(BaseModel):
     type: Union[Literal["update"], Literal["awareness"]]
-    data: str  # base64
+    data: CrdtPayloadData
     client_id: str
 
 
