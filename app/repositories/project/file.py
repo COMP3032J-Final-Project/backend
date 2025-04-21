@@ -142,11 +142,15 @@ class FileDAO:
         """
         复制文件
         """
+        
         if not target_project:
             target_project = source_file.project
+            filename = get_copy_filename(source_file.filename)
+        else:
+            filename = source_file.filename
 
         target_file = File(
-            filename=get_copy_filename(source_file.filename),
+            filename=filename,
             filepath=target_file_create_update.filepath if target_file_create_update.filepath else source_file.filepath,
             project_id=target_project.id,
         )

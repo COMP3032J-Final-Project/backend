@@ -22,15 +22,13 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=APIResponse[File])
 async def list_files(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ):
     """
     获取项目文件列表
     """
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this project")
+    current_project = await get_current_project(current_user, project_id, db)
 
     files = await ProjectDAO.get_files(project=current_project)
     return APIResponse(code=200, data=files, msg="success")
@@ -39,16 +37,14 @@ async def list_files(
 @router.get("/{file_id:uuid}")
 async def get_file_download_url(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
-    current_file: Annotated[File, Depends(get_current_file)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
 ) -> APIResponse[FileURL]:
     """
     获取文件下载URL
     """
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this file")
+    current_file = await get_current_file(current_user, project_id, file_id, db)
 
     # 检查文件是否存在于 R2
     is_exists = await FileDAO.check_file_exist_in_r2(current_file)
@@ -61,13 +57,16 @@ async def get_file_download_url(
 
 @router.delete("/{file_id:uuid}", response_model=APIResponse[File])
 async def delete_file(
-    current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
 ) -> APIResponse[File]:
     """
     删除文件
     """
+    current_file = await get_current_file(current_user, project_id, file_id, db)
+
     # 检查用户权限
     is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
     is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
@@ -103,13 +102,15 @@ async def delete_file(
 @router.post("/create_update", response_model=APIResponse[FileUploadResponse])
 async def create_update_file(
     file_create_update: FileCreateUpdate,
-    current_project: Annotated[Project, Depends(get_current_project)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse[FileUploadResponse]:
     """
     创建File对象,并获取文件上传URL
     """
+    current_project = await get_current_project(current_user, project_id, db)
+
     # 检查用户权限
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
@@ -123,13 +124,16 @@ async def create_update_file(
 
 @router.get("/{file_id:uuid}/exist", response_model=APIResponse[File])
 async def check_file_exist(
-    current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
 ) -> APIResponse[File]:
     """
     确认文件已上传到R2
     """
+    current_file = await get_current_file(current_user, project_id, file_id, db)
+
     # 检查用户权限
     is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
     is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
@@ -163,10 +167,15 @@ async def check_file_exist(
 @router.put("/{file_id:uuid}/mv", response_model=APIResponse[File])
 async def mv(
     file_create_update: FileCreateUpdate,
-    current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
 ) -> APIResponse[File]:
+    """
+    移动/重命名文件
+    """
+    current_file = await get_current_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
     is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
@@ -206,10 +215,15 @@ async def mv(
 @router.put("/{file_id:uuid}/cp", response_model=APIResponse[File])
 async def cp(
     file_create_update: FileCreateUpdate,
-    current_file: Annotated[File, Depends(get_current_file)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
 ) -> APIResponse[File]:
+    """
+    复制文件
+    """
+    current_file = await get_current_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
     is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)

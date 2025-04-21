@@ -1,7 +1,8 @@
 from typing import Annotated
+import uuid
 import orjson
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Path, WebSocket, WebSocketDisconnect
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_project, get_db, get_current_user_ws
@@ -29,24 +30,14 @@ router = APIRouter()
 async def project(
     websocket: WebSocket,
     current_user: Annotated[User, Depends(get_current_user_ws)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: AsyncSession = Depends(get_db),
+    project_id: uuid.UUID = Path(...),
 ):
     """This endpoint handles all websocket stuffs related to a single project.
     The all in one manner greatly reduces the websocket connection number."""
-    await websocket.accept()
+    current_project = await get_current_project(current_user, project_id, db)
 
-    # check user permission
-    try:
-        is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-        if not is_member:
-            logger.debug(f"{current_user} is not a member of {current_project}")
-            await websocket.close(code=4000, reason="No permission to access the project")
-            return
-    except Exception as e:
-        logger.error(f"Error while checking permissions: {e}")
-        await websocket.close(code=4000, reason="Server error")
-        return
+    await websocket.accept()
 
     member_info = MemberInfo(
         user_id=current_user.id,

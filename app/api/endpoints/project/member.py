@@ -1,6 +1,7 @@
 from typing import Annotated, List
+import uuid
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,13 +27,11 @@ router = APIRouter()
 @router.get("/", response_model=APIResponse[List[MemberInfo]])
 async def get_members(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse[List[MemberInfo]]:
     """获取项目所有成员信息"""
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this project")
+    current_project = await get_current_project(current_user, project_id, db)
 
     members = await ProjectDAO.get_members(current_project, db)
     members_info = []
@@ -54,14 +53,11 @@ async def get_members(
 async def get_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse[MemberInfo]:
     """获取项目成员信息"""
-    # 检查当前用户
-    is_current_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_current_member:
-        raise HTTPException(status_code=403, detail="No permission to get member")
+    current_project = await get_current_project(current_user, project_id, db)
 
     # 检查目标用户
     is_target_member = await ProjectDAO.is_project_member(current_project, target_user, db)
@@ -81,14 +77,16 @@ async def get_member(
 async def add_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     member_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """
     添加项目成员
     # TODO 发送邮件邀请
     """
+    current_project = await get_current_project(current_user, project_id, db)
+
     is_current_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     is_current_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
     is_target_member = await ProjectDAO.is_project_member(current_project, target_user, db)
@@ -143,23 +141,23 @@ async def add_member(
 async def remove_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """移除项目成员"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     is_current_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     is_current_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
-    is_current_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     is_target_owner = await ProjectDAO.is_project_owner(current_project, target_user, db)
     is_target_admin = await ProjectDAO.is_project_admin(current_project, target_user, db)
     is_target_member = await ProjectDAO.is_project_member(current_project, target_user, db)
 
     # 检查当前用户
-    if not is_current_member or target_user.id != current_user.id:
-        if not is_current_admin and not is_current_owner:
-            raise HTTPException(status_code=403, detail="No permission to remove members")
-        elif is_target_admin and not is_current_owner:
-            raise HTTPException(status_code=403, detail="No permission to remove admins")
+    if not is_current_admin and not is_current_owner:
+        raise HTTPException(status_code=403, detail="No permission to remove members")
+    elif is_target_admin and is_current_admin:
+        raise HTTPException(status_code=403, detail="No permission to remove admins")
 
     # 检查目标用户
     if is_target_owner:
@@ -197,11 +195,13 @@ async def remove_member(
 async def update_member(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     new_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """更新成员权限"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     is_current_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
     is_current_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     is_target_owner = await ProjectDAO.is_project_owner(current_project, target_user, db)
@@ -262,10 +262,12 @@ async def update_member(
 async def transfer_ownership(
     target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """转移项目所有权"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     is_current_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     is_target_member = await ProjectDAO.is_project_member(current_project, target_user, db)
 
@@ -323,10 +325,12 @@ async def transfer_ownership(
 @router.put("/favorite_template/", response_model=APIResponse)
 async def favorite_template(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_template: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """收藏或取消收藏模板"""
+    current_template = await get_current_project(current_user, project_id, db)
+
     is_template = current_template.type == ProjectType.TEMPLATE
     if not is_template:
         raise HTTPException(status_code=400, detail="Template not found")

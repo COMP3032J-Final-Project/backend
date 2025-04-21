@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Annotated, Optional, List
+import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_project, get_db
@@ -20,10 +21,12 @@ router = APIRouter()
 async def update_chat_room(
     chat_room_update: ChatRoomUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse[ChatRoomUpdate]:
     """更新聊天室信息"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_admin and not is_owner:
@@ -38,15 +41,13 @@ async def update_chat_room(
 @router.get("/history", response_model=APIResponse[List[ChatMessageInfo]])
 async def get_chat_history(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
     max_num: int,
     last_timestamp: Optional[str] = None,
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse[List[ChatMessageInfo]]:
     """获取聊天室历史消息"""
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_member:
-        return APIResponse(code=403, msg="No permission to access this project")
+    current_project = await get_current_project(current_user, project_id, db)
 
     # 检查参数
     if max_num <= 0 or max_num > 100:

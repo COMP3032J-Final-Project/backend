@@ -104,12 +104,13 @@ async def get_target_user(
     """通过用户名获取用户"""
     user = await UserDAO.get_user_by_username(username, db)
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=404, detail="User not found")
     return user
 
 
 async def get_current_project(
-    project_id: Annotated[uuid.UUID, Path(..., description="The ID of the project")],
+    current_user: User,
+    project_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Project:
     # 验证项目ID
@@ -117,15 +118,24 @@ async def get_current_project(
     if project is None:
         raise HTTPException(status_code=404, detail="Project|Template not found")
 
+    # 验证用户权限
+    is_public = project.is_public
+    is_member = await ProjectDAO.is_project_member(project, current_user, db)
+    if not is_public and not is_member:
+        raise HTTPException(status_code=403, detail="No permission to access this project|template")
     return project
 
 
 async def get_current_file(
-    file_id: Annotated[uuid.UUID, Path(...)],
-    current_project: Annotated[Project, Depends(get_current_project)],
+    current_user: User,
+    project_id: uuid.UUID,
+    file_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> File:
+    current_project = await get_current_project(current_user, project_id, db)
+
     file = await FileDAO.get_file_by_id(file_id, db)
     if not file or file.project_id != current_project.id:
         raise HTTPException(status_code=404, detail="File not found")
+
     return file

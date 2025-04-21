@@ -1,4 +1,6 @@
 from typing import Annotated, List
+from fastapi import APIRouter, Depends, HTTPException, Path
+import uuid
 
 from loguru import logger
 
@@ -46,17 +48,14 @@ async def create_project(
 async def create_project_from_template(
     project_create: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
-    current_template: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """从模板创建项目"""
+    current_template = await get_current_project(current_user, project_id, db)
+
     if current_template.type != ProjectType.TEMPLATE:
         raise HTTPException(status_code=404, detail="Template not found")
-
-    is_public = current_template.is_public
-    is_member = await ProjectDAO.is_project_member(current_template, current_user, db)
-    if not is_public and not is_member:
-        raise HTTPException(status_code=403, detail="No permission to create project from this template")
 
     project_create.type = ProjectType.PROJECT
     new_project = await ProjectDAO.create_project(project_create, db)
@@ -71,13 +70,16 @@ async def create_project_from_template(
 async def create_template_from_project(
     project_create: ProjectCreate,
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """从项目创建模板"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     if current_project.type != ProjectType.PROJECT:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # only owner can do
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to create template from this project")
@@ -94,13 +96,16 @@ async def create_template_from_project(
 @router.post("/{project_id:uuid}/copy_project", response_model=APIResponse)
 async def copy_project(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """复制项目"""
+    current_project = await get_current_project(current_user, project_id, db)
+
     if current_project.type != ProjectType.PROJECT:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # only member can do
     is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
     if not is_member:
         raise HTTPException(status_code=403, detail="No permission to copy this project")
@@ -196,14 +201,11 @@ async def get_favorite_templates(
 @router.get("/{project_id:uuid}", response_model=APIResponse[ProjectInfo])
 async def get_project(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ):
     """获取指定项目(模板)详情"""
-    is_public = current_project.is_public
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    if not is_public and not is_member:
-        raise HTTPException(status_code=403, detail="No permission to access this project|template")
+    current_project = await get_current_project(current_user, project_id, db)
 
     project_info = await ProjectDAO.get_project_info(current_project, db, user=current_user)
     return APIResponse(code=200, data=project_info, msg="success")
@@ -213,11 +215,13 @@ async def get_project(
 async def update_project(
     project_update: ProjectUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """更新项目信息"""
-    # 检查用户是否为项目管理员或创建者
+    current_project = await get_current_project(current_user, project_id, db)
+
+    # only admin or owner can do
     is_admin = await ProjectDAO.is_project_admin(current_project, current_user, db)
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_admin and not is_owner:
@@ -309,16 +313,17 @@ async def delete_projects(
 @router.delete("/{project_id:uuid}", response_model=APIResponse)
 async def delete_project(
     current_user: Annotated[User, Depends(get_current_user)],
-    current_project: Annotated[Project, Depends(get_current_project)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
 ) -> APIResponse:
     """删除项目"""
-    # 检查用户是否为项目创建者
+    current_project = await get_current_project(current_user, project_id, db)
+
+    # only owner can do
     is_owner = await ProjectDAO.is_project_owner(current_project, current_user, db)
     if not is_owner:
         raise HTTPException(status_code=403, detail="No permission to delete this project")
 
-    # 删除项目
     await ProjectDAO.delete_project(current_project, db)
 
     # 发送广播
