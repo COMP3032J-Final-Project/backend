@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Optional
 from app.core.config import settings
 from loguru import logger
@@ -8,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 import redis.asyncio as aioredis
 from base64 import b64decode
-from fastapi import BackgroundTasks
+# from fastapi import BackgroundTasks # only works inside FastAPI's request/response lifecycle
 
 from app.repositories.project.file import FileDAO
 
@@ -152,7 +153,6 @@ class CrdtHandler:
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
         self.temp_directory_path = temp_directory_path
-        self.background_tasks = BackgroundTasks()
                 
         logger.info(f"Initialized CrdtHandler with backend: {type(backend).__name__}")
         logger.info(f"Local file updates {'enabled' if should_update_local_files else 'disabled'}")
@@ -201,7 +201,6 @@ class CrdtHandler:
 
     async def _upload_to_r2(self, file_id, doc: LoroDoc):
         snapshot_bytes: bytes = doc.export(ExportMode.ShallowSnapshot(doc.state_frontiers))
-        logger.warning("hello")
         FileDAO.update_r2_file(snapshot_bytes, file_id)
 
     async def receive_update(
@@ -216,22 +215,16 @@ class CrdtHandler:
         data = b64decode(raw_data)
         try:
             updated_doc = await self.backend.apply_update(file_id, data)
-            logger.debug(updated_doc.get_text(self.lorocrdt_text_container_id).to_string())
+            # logger.debug(updated_doc.get_text(self.lorocrdt_text_container_id).to_string())
 
-            # Schedule background tasks IF content extraction was successful (or decide otherwise)
             if self.should_update_local_files:
-                self.background_tasks.add_task(
-                    self._update_local_file,
-                    project_id,
-                    file_id,
-                    updated_doc
+                asyncio.create_task(
+                    self._update_local_file(project_id, file_id, updated_doc)
                 )
                 
             if self.should_upload_to_r2:
-                self.background_tasks.add_task(
-                    self._upload_to_r2,
-                    file_id,
-                    updated_doc
+                asyncio.create_task(
+                    self._upload_to_r2(file_id, updated_doc)
                 )
                 
             if self.should_update_local_files and updated_doc:
