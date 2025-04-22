@@ -3,14 +3,13 @@ import os
 import uuid
 from io import BytesIO
 from pathlib import PureWindowsPath
-from typing import List, Optional
+from typing import Optional
 
 import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 

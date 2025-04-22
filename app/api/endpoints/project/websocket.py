@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Path, WebSocket, WebSocketDisconnect
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_project, get_db, get_current_user_ws
-from app.models.project.project import MemberInfo, Project
+from app.models.project.project import MemberInfo, Project, ProjectPermission
 from app.models.user import User
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
@@ -59,12 +59,20 @@ async def project(
 
         for cid in channel_client_ids:
             user = await UserDAO.get_user_by_id(uuid.UUID(cid), db)
+
+            is_member = await ProjectDAO.is_project_member(current_project, user, db)
+            if is_member:
+                permission = await ProjectDAO.get_project_permission(current_project, user, db)
+            else:
+                permission = ProjectPermission.NON_MEMBER
+
             if user:
                 member = MemberInfo(
                     user_id=user.id,
                     username=user.username,
                     email=user.email,
-                    permission=await ProjectDAO.get_project_permission(current_project, user, db),
+                    permission=permission,
+                    avatar_url=await UserDAO.get_avatar_url(user),
                 )
                 connected_members.append(member.model_dump())
 

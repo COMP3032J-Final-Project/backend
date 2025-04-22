@@ -17,6 +17,7 @@ class EventScope(str, Enum):
     CRDT = "crdt"
     Error = "error"
 
+
 class ProjectAction(str, Enum):
     DELETE_PROJECT = "delete_project"
     UPDATE_NAME = "update_name"
@@ -36,6 +37,7 @@ class FileAction(str, Enum):
     RENAMED = "renamed"
     MOVED = "moved"
     DELETED = "deleted"
+
 
 class ChatAction(str, Enum):
     SEND_MESSAGE = "send_message"
@@ -66,7 +68,7 @@ SCOPE_ACTION_MAP: Dict[EventScope, Type[Enum]] = {
 
 class CrdtPayloadData(BaseModel):
     file_id: str
-    data: str # base64
+    data: str  # base64
 
 
 class CrdtPayload(BaseModel):
@@ -103,7 +105,7 @@ class BaseMessage(BaseModel):
             )
 
         if self.scope == EventScope.CRDT:
-             if not isinstance(self.payload, CrdtPayload):
+            if not isinstance(self.payload, CrdtPayload):
                 try:
                     self.payload = CrdtPayload.model_validate(self.payload)
                 except (ValidationError, TypeError) as e:
@@ -131,13 +133,9 @@ WrongInputMessageFormatErrorStr = ErrorMessage(
     payload=ErrorPayload(code=1, message="Wrong input message format.")
 ).model_dump_json()
 
-ScopeNotAllowedErrorStr = ErrorMessage(
-    payload=ErrorPayload(code=2, message="Scope is not allowed.")
-).model_dump_json()
+ScopeNotAllowedErrorStr = ErrorMessage(payload=ErrorPayload(code=2, message="Scope is not allowed.")).model_dump_json()
 
-ObjectNotFoundErrorStr = ErrorMessage(
-    payload=ErrorPayload(code=3, message="Object not found.")
-).model_dump_json()
+ObjectNotFoundErrorStr = ErrorMessage(payload=ErrorPayload(code=3, message="Object not found.")).model_dump_json()
 
 CrdtApplyUpdateErrorStr = ErrorMessage(
     payload=ErrorPayload(code=4, message="Crdt apply update error.")

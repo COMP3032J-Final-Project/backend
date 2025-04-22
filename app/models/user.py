@@ -1,5 +1,5 @@
 # 用于实现 User 相关模型
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 from pydantic import EmailStr, ConfigDict
 from sqlmodel import Field, Relationship
 
@@ -28,9 +28,7 @@ class User(BaseDB, table=True):
         max_length=254,
         sa_column_kwargs={"unique": True, "index": True, "nullable": False},
     )
-    hashed_password: str = Field(
-        ..., max_length=100, sa_column_kwargs={"nullable": False}
-    )
+    hashed_password: str = Field(..., max_length=100, sa_column_kwargs={"nullable": False})
     is_active: bool = Field(
         default=True,
     )
@@ -71,6 +69,7 @@ class UserInfo(Base):
     )
     is_active: bool = Field(default=True, description="是否激活")
     is_superuser: bool = Field(default=False, description="是否为超级用户")
+    avatar_url: Optional[str] = Field(default=None)
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -118,7 +117,6 @@ class UserUpdate(Base):
     更新当前用户模型，用于用户更新自己的数据
     """
 
-    # TODO 添加其他用户信息字段
     username: str | None = Field(default=None, max_length=255)
     email: EmailStr | None = Field(default=None, max_length=255)
 
@@ -137,3 +135,11 @@ class UserUpdatePwd(Base):
     """
 
     new_password: str = Field(..., min_length=8, max_length=40)
+
+
+class UserUpdateAvatar(Base):
+    """
+    更新用户头像模型
+    """
+
+    is_default: bool = Field(default=False)

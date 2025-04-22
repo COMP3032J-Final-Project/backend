@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user, get_target_user
 from app.core.security import verify_password, get_password_hash
 from app.models.base import APIResponse
-from app.models.user import User, UserVerifyPwd, UserUpdatePwd
+from app.models.user import User, UserUpdateAvatar, UserVerifyPwd, UserUpdatePwd
 from app.models.user import UserInfo, UserRegister, UserUpdate
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
@@ -45,6 +45,7 @@ async def get_me(current_user: Annotated[User, Depends(get_current_user)]) -> AP
     获取当前用户信息
     """
     user_info = UserInfo.model_validate(current_user)
+    user_info.avatar_url = await UserDAO.get_avatar_url(current_user)
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
 
 
@@ -119,4 +120,19 @@ async def get_user(
     通过用户名获取用户信息
     """
     user_info = UserInfo.model_validate(target_user)
+    user_info.avatar_url = await UserDAO.get_avatar_url(target_user)
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
+
+
+@router.put("/avatar", response_model=APIResponse)
+async def update_avatar(
+    user_update_avatar: UserUpdateAvatar,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> APIResponse:
+    """
+    更新用户头像
+    """
+    is_default = user_update_avatar.is_default
+
+    avatar_url = await UserDAO.update_avatar(current_user, is_default)
+    return APIResponse(code=200, data=avatar_url, msg="success")
