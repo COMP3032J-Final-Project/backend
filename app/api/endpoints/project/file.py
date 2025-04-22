@@ -5,7 +5,6 @@ from app.api.deps import get_current_project_file, get_current_project, get_curr
 from app.api.endpoints.project.websocket_handlers import get_project_channel_name, project_general_manager
 from app.models.base import APIResponse
 from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL, FilesDelete
-from app.models.project.project import Project
 from app.models.project.websocket import EventScope, FileAction, Message
 from app.models.user import User
 from app.repositories.project.file import FileDAO
