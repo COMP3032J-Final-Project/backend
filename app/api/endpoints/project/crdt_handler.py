@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from app.core.config import settings
 from loguru import logger
 from pathlib import Path
@@ -15,148 +15,23 @@ import time
 import functools
 
 from app.repositories.project.file import FileDAO
+from app.core.aiocache import cache as hivey_cache
 
-
-class CrdtBackend(ABC):
-    """Abstract base class for CRDT document storage."""
-    @abstractmethod
-    async def connect(self) -> None:
-        pass
-
-    @abstractmethod
-    async def disconnect(self) -> None:
-        pass
-
-
-    @abstractmethod
-    async def set(self, file_id: str, doc: LoroDoc) -> None:
-        """Stores the entire state of the LoroDoc."""
-        pass
-
-    @abstractmethod
-    async def get(self, file_id: str) -> LoroDoc:
-        """Retrieves the LoroDoc, potentially creating a new one if not found."""
-        pass
-
-    @abstractmethod
-    async def apply_update(self, file_id: str, update: bytes) -> LoroDoc:
-        """
-        Applies a delta update to the document specified by file_id.
-        Returns the updated LoroDoc object.
-        This is often the primary interaction method besides initial get.
-        """
-        pass
-
-class CrdtInMemoryBackend(CrdtBackend):
-    """Stores LoroDocs directly in an in-memory dictionary."""
-    def __init__(self):
-        pass
-
-    async def connect(self):
-        self._dict: Dict[str, LoroDoc] = defaultdict(LoroDoc)
-        logger.info("Initialized CrdtInMemoryBackend")
-
-    async def disconnect(self):
-        self._dict.clear()
-
-    async def set(self, file_id: str, doc: LoroDoc):
-        self._dict[file_id] = doc
-
-    async def get(self, file_id: str) -> LoroDoc:
-        doc = self._dict[file_id]
-        return doc
-
-    async def apply_update(self, file_id: str, update: bytes) -> LoroDoc:
-        doc = self._dict[file_id]
-        try:
-            doc.import_(update)
-        except BaseException as e:
-            logger.error(f"Error applying update to in-memory doc {file_id}: {e}")
-            await self.set(file_id, LoroDoc())
-            raise Exception(e)
-
-        return doc
-
-# --- Redis Backend Implementation ---
-class CrdtRedisBackend(CrdtBackend):
-    """Stores LoroDoc snapshots in Redis."""
-    def __init__(self, url: str):
-        self._url = url
-
-    async def connect(self):
-        self.conn = aioredis.Redis.from_url(self._url, health_check_interval=30)
-        logger.info(f"Initialized CrdtRedisBackend connected to {self._url}")
-
-    async def disconnect(self):
-        if self.conn:
-            await self.conn.aclose()
-
-    def _get_redis_key(self, file_id: str) -> str:
-        """Generates the Redis key for a given file_id."""
-        return f"hivey:crdt:{file_id}"
-
-    async def set(self, file_id: str, doc: LoroDoc) -> None:
-        """Exports snapshot and stores it in Redis."""
-        key = self._get_redis_key(file_id)
-        try:
-            snapshot_bytes: bytes = doc.export(ExportMode.Snapshot())
-            await self.conn.set(key, snapshot_bytes)
-        except Exception as e:
-            logger.error(f"Error setting Redis key {key}: {e}")
-            raise
-
-    async def get(self, file_id: str) -> LoroDoc:
-        """Retrieves snapshot from Redis and imports into a new LoroDoc."""
-        key = self._get_redis_key(file_id)
-        doc = LoroDoc()
-        try:
-            snapshot_bytes: Optional[bytes] = await self.conn.get(key)
-            if snapshot_bytes:
-                doc.import_(snapshot_bytes)
-        except BaseException as e:
-            logger.error(f"Error getting or importing Redis key {key}: {e}")
-            # TODO better handling
-            # Don't raise error since some key may already exists and is not
-            # loro-crdt format
-        return doc
-
-    async def apply_update(self, file_id: str, update: bytes) -> LoroDoc:
-        # TODO use Redis transactions
-        doc = await self.get(file_id)
-        try:
-            doc.import_(update)
-        except BaseException as e:
-            logger.error(f"Error applying update to doc {file_id}: {e}")
-            await self.set(file_id, LoroDoc())
-            raise Exception(e)
-        await self.set(file_id, doc)
-        return doc
-
-
-# --- CRDT Handler Class ---
 class CrdtHandler:
     def __init__(
         self,
-        backend_url: Optional[str] = None,
-        backend: Optional[CrdtBackend] = None,
         should_update_local_files: bool = False,
         should_upload_to_r2: bool = False,
         r2_upload_min_interval_seconds: float = 1.0,
         lorocrdt_text_container_id: str = "codemirror",
         temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
+        cache: Any = None,
+        cache_namespace: str = "hivey:crdt:",  # f"{cache_namespace}{file_id}"
     ):
-        # Backend initialization (same as before)
-        if backend:
-            self.backend = backend
-        elif backend_url:
-            if backend_url.startswith("memory://"):
-                self.backend = CrdtInMemoryBackend()
-            else:
-                self.backend = CrdtRedisBackend(backend_url)
-        else:
-            logger.warning("No backend_url or backend provided, defaulting to CrdtInMemoryBackend.")
-            self.backend = CrdtInMemoryBackend()
+        if cache is None:
+            self.cache = hivey_cache
             
+        self.cache_namespace = cache_namespace
         self.lorocrdt_text_container_id = lorocrdt_text_container_id
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
@@ -170,7 +45,6 @@ class CrdtHandler:
         self._upload_in_progress: Dict[str, asyncio.Task] = {}
         self._upload_state_lock = asyncio.Lock()
         
-        logger.info(f"Initialized CrdtHandler with backend: {type(self.backend).__name__}")
         logger.info(f"Local file updates {'enabled' if should_update_local_files else 'disabled'}")
         logger.info(f"R2 uploads {'enabled' if self.should_upload_to_r2 else 'disabled'}")
         if self.should_upload_to_r2:
@@ -178,12 +52,12 @@ class CrdtHandler:
         if should_update_local_files:
             logger.info(f"Temp directory for local files: {self.temp_directory_path}")
 
+    def get_cache_key(self, file_id: str) -> str:
+        return f"{self.cache_namespace}{file_id}"
             
-    async def initialize(self):
-        await self.backend.connect()
-        
     async def cleanup(self):
         logger.info("Cleaning up CrdtHandler...")
+        
         # Cancel any tasks still marked as in progress
         async with self._upload_state_lock:
             tasks_to_cancel = list(self._upload_in_progress.values())
@@ -199,11 +73,41 @@ class CrdtHandler:
                 except Exception as e:
                     logger.warning(f"Error awaiting cancelled task during cleanup: {e}")
                     
-        await self.backend.disconnect()
         logger.info("CrdtHandler cleanup complete.")
+
+    # async def import_initial(self, fileid: str, crdt_snapshot: bytes):
+    #     pass
         
+
+    async def _get_doc_from_cache(self, file_id: str) -> LoroDoc:
+        """Internal helper to get LoroDoc from cache snapshot."""
+        key = self.get_cache_key(file_id)
+        snapshot_bytes: Optional[bytes] = await self.cache.get(key)
+        
+        doc = LoroDoc()
+        
+        if snapshot_bytes:
+            try:
+                doc.import_(snapshot_bytes)
+            except BaseException as e:
+                logger.error(f"Loro import error for cached snapshot {key}: {e}. Resetting doc.")
+                await self.cache.delete(key) # Remove corrupted data
+        
+        return doc
+
+    async def _set_doc_to_cache(self, file_id: str, doc: LoroDoc):
+        """Internal helper to set LoroDoc snapshot to cache."""
+        key = self.get_cache_key(file_id)
+        try:
+            snapshot_bytes = doc.export(ExportMode.Snapshot())
+        except BaseException as le:
+             logger.error(f"Loro export error for doc {file_id} before caching: {le}")
+             return
+         
+        await self.cache.set(key, snapshot_bytes)
+    
     async def get_doc(self, file_id: str) -> LoroDoc:
-        doc = await self.backend.get(file_id)
+        doc = await self._get_doc_from_cache(file_id)
         return doc
     
     async def _update_local_file(
@@ -222,6 +126,7 @@ class CrdtHandler:
             )
             return
         
+        # FIXME file name instead of `file_id`
         target_file_path = self.temp_directory_path / project_id / file_id
         target_dir = target_file_path.parent
         
@@ -256,10 +161,9 @@ class CrdtHandler:
                 
         asyncio.create_task(cleanup_task_state())
         
-    async def _perform_r2_upload(self, file_id: str):
+    async def _perform_r2_upload(self, file_id: str, doc: LoroDoc):
         """Performs the actual R2 upload. Fetches latest state before uploading."""
         try:
-            doc = await self.backend.get(file_id)
             snapshot_bytes: bytes = doc.export(ExportMode.Snapshot())
             await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id)
             logger.debug(f"Successfully uploaded snapshot to R2 for file_id: {file_id}")
@@ -277,18 +181,26 @@ class CrdtHandler:
         and no upload is currently running for this file_id.
         """
         try:
-            data = b64decode(raw_data)
+            update_bytes = b64decode(raw_data)
         except Exception as e:
             logger.error(f"Failed to decode base64 data for {project_id}/{file_id}: {e}")
             return None
         
-        updated_doc: Optional[LoroDoc] = None
-        
         try:
-            updated_doc = await self.backend.apply_update(file_id, data)
-            if self.should_update_local_files and updated_doc:
+            doc = await self._get_doc_from_cache(file_id)
+            try:
+                doc.import_(update_bytes)
+            except BaseException as e:
+                logger.error(f"Loro import error applying update to doc {file_id}: {e}. Resetting doc.")
+                empty_doc = LoroDoc()
+                await self._set_doc_to_cache(file_id, empty_doc)
+                return None
+
+            await self._set_doc_to_cache(file_id, doc)
+             
+            if self.should_update_local_files and doc:
                 asyncio.create_task(
-                    self._update_local_file(project_id, file_id, updated_doc)
+                    self._update_local_file(project_id, file_id, doc)
                 )
                 
             if self.should_upload_to_r2:
@@ -299,29 +211,26 @@ class CrdtHandler:
                     # `r2_upload_min_interval_seconds` so that we cannot upload
                     # the latest state of file with file_id to r2
                     if file_id in self._upload_in_progress:
-                        return updated_doc
+                        return doc
                     
                     now = time.monotonic()
                     last_start = self._last_upload_start_time.get(file_id, 0.0)
                     if (now - last_start) >= self.r2_upload_min_interval_seconds:
                         logger.debug(f"Scheduling R2 upload for {file_id}. Interval passed.")
                         self._last_upload_start_time[file_id] = now
-                        upload_task = asyncio.create_task(self._perform_r2_upload(file_id))
+                        upload_task = asyncio.create_task(self._perform_r2_upload(file_id, doc))
                         self._upload_in_progress[file_id] = upload_task
                         callback = functools.partial(self._upload_task_done_callback, file_id)
                         upload_task.add_done_callback(callback)
                         
-            return updated_doc
+            return doc
         
-        except ConnectionError as e:
-            logger.error(f"Backend connection error processing update for {project_id}/{file_id}: {e}")
-            return None
         except Exception as e:
             logger.error(f"Failed to process update or schedule upload for {project_id}/{file_id}: {e}")
-            return updated_doc if updated_doc else None
+            return None
 
 
 crdt_handler = CrdtHandler(
-    backend_url=settings.CRDT_HANDLER_BACKEND_URL,
+    lorocrdt_text_container_id=settings.LOROCRDT_TEXT_CONTAINER_ID,
     should_upload_to_r2=True
 )

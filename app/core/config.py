@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     DB_HOST: str = os.getenv("HIVEY_B_DB_HOST", "localhost")
     DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
 
+    AIOCACHE_URL: str = os.getenv("HIVEY_B_AIOCACHE_URL", "memory://").strip()
     PUB_SUB_BACKEND_URL: str = os.getenv("HIVEY_B_PUB_SUB_BACKEND_URL", "memory://").strip()
-    CRDT_HANDLER_BACKEND_URL: str = os.getenv("HIVEY_B_CRDT_HANDLER_BACKEND_URL", "memory://").strip()
 
     # 管理员
     ADMIN_EMAIL: str = os.getenv("HIVEY_B_ADMIN_EMAIL", "admin@example.com")
@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     R2_ACCESS_KEY: str = os.getenv("HIVEY_B_R2_ACCESS_KEY", "")
     R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
     R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
+
+    LOROCRDT_TEXT_CONTAINER_ID: str = os.getenv("LOROCRDT_TEXT_CONTAINER_ID", "codemirror")
 
     TEMP_PATH: Path = Path(os.path.normpath(os.getenv("HIVEY_B_TEMP_PATH", "./temp")))
 

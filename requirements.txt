@@ -25,3 +25,4 @@ requests~=2.32.3
 aspubsub~=0.1.3
 loro~=1.5.0
 watchdog~=6.0.0
+aiocache @ git+https://github.com/aio-libs/aiocache@768763b5d945c9e269a82e8f0f15bea722031bc5

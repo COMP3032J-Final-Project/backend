@@ -18,6 +18,7 @@ from app.models.project.project import (
     ProjectType,
     ProjectUpdate,
 )
+from app.repositories.project.file import FileDAO
 from app.models.user import User
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.project import ProjectDAO
@@ -26,6 +27,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project.websocket import Message, EventScope, ProjectAction
 from .websocket_handlers import project_general_manager, get_project_channel_name
+from loro import LoroDoc
+from lib.utils import is_likely_binary
+from app.core.config import settings
+from app.core.aiocache import cache
+from app.api.endpoints.project.crdt_handler import crdt_handler 
 
 router = APIRouter()
 
@@ -209,6 +215,53 @@ async def get_project(
 
     project_info = await ProjectDAO.get_project_info(current_project, db, user=current_user)
     return APIResponse(code=200, data=project_info, msg="success")
+
+@router.get("/{project_id:uuid}/initialize", response_model=APIResponse[str])
+async def initialize_project(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+):
+    """
+    Initialize Project
+    - Download Project files into local directory for compilation service
+    - Put file snapshot into crdt_handler backend
+
+    If already initialized, don't do anything.
+    TODO implement auto cleanup project resources (local temporarily files) when
+    project is inactive.
+    """
+    # TODO use `aiocache` to store initialization status
+    current_project = await get_current_project(current_user, project_id, db)
+
+    # logger.info(await cache.get(f"hivey:project:{project_id}/initialized"))
+    project_files = await ProjectDAO.get_files(current_project)
+    for file in project_files:
+        fileobj_bytes = FileDAO.get_r2_file_data(file.id)
+        doc = LoroDoc()
+        
+        isBinary = False
+        try:
+            doc.import_(fileobj_bytes)
+        except BaseException:
+            isBinary = True
+
+        
+        target_path = settings.TEMP_PROJECTS_PATH / str(project_id) / file.filename
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if isBinary:
+            target_path.write_bytes(fileobj_bytes)
+        else:
+            text_content = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID).to_string()
+            target_path.write_text(text_content)
+
+            # set initial snapshot for crdt_handler
+            await crdt_handler._set_doc_to_cache(str(file.id), doc)
+            
+            
+    
+    return APIResponse(code=202, data="success", msg="success")
 
 
 @router.put("/{project_id:uuid}", response_model=APIResponse)

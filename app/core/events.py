@@ -31,7 +31,6 @@ async def startup_handler() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     await project_general_manager.initialize()
-    await crdt_handler.initialize()
 
     async for db in get_db():
         await create_default_admin(db)
