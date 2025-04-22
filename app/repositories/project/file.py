@@ -256,6 +256,20 @@ class FileDAO:
         except botocore.exceptions.ClientError as error:
             logger.error(error)
 
+    @staticmethod
+    def get_r2_file_data(file_id: str | uuid.UUID) -> bytes:
+        buffer = BytesIO()
+        frp = FileDAO.get_remote_file_path(file_id)
+        
+        try:
+            r2client.download_fileobj(settings.R2_BUCKET, frp, buffer)
+            buffer.seek(0)
+            data = buffer.read()
+        finally:
+            buffer.close()
+
+        return data
+
     # @staticmethod
     # async def push_file_to_r2(file: File, localpath: str = "") -> None:
     #     """

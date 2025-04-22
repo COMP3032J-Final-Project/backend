@@ -69,6 +69,7 @@ class CrdtInMemoryBackend(CrdtBackend):
             doc.import_(update)
         except BaseException as e:
             logger.error(f"Error applying update to in-memory doc {file_id}: {e}")
+            await self.set(file_id, LoroDoc())
             raise Exception(e)
 
         return doc
@@ -95,7 +96,7 @@ class CrdtRedisBackend(CrdtBackend):
         """Exports snapshot and stores it in Redis."""
         key = self._get_redis_key(file_id)
         try:
-            snapshot_bytes: bytes = doc.export(ExportMode.ShallowSnapshot(doc.state_frontiers))
+            snapshot_bytes: bytes = doc.export(ExportMode.Snapshot())
             await self.conn.set(key, snapshot_bytes)
         except Exception as e:
             logger.error(f"Error setting Redis key {key}: {e}")
@@ -123,6 +124,7 @@ class CrdtRedisBackend(CrdtBackend):
             doc.import_(update)
         except BaseException as e:
             logger.error(f"Error applying update to doc {file_id}: {e}")
+            await self.set(file_id, LoroDoc())
             raise Exception(e)
         await self.set(file_id, doc)
         return doc
@@ -200,7 +202,10 @@ class CrdtHandler:
             logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
     async def _upload_to_r2(self, file_id, doc: LoroDoc):
-        snapshot_bytes: bytes = doc.export(ExportMode.ShallowSnapshot(doc.state_frontiers))
+        content = doc.get_text(self.lorocrdt_text_container_id).to_string()
+        logger.debug(f"crdt: update r2 file {file_id}: {content}");
+        
+        snapshot_bytes: bytes = doc.export(ExportMode.Snapshot())
         FileDAO.update_r2_file(snapshot_bytes, file_id)
 
     async def receive_update(
@@ -222,6 +227,7 @@ class CrdtHandler:
                     self._update_local_file(project_id, file_id, updated_doc)
                 )
                 
+            # FIXME periodly do this task
             if self.should_upload_to_r2:
                 asyncio.create_task(
                     self._upload_to_r2(file_id, updated_doc)

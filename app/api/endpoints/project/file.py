@@ -12,7 +12,7 @@ from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel.ext.asyncio.session import AsyncSession
-from loro import ExportMode, VersionVector
+from loro import ExportMode, VersionVector, LoroDoc
 from base64 import b64decode, b64encode
 from .crdt_handler import crdt_handler
 from loguru import logger
@@ -41,6 +41,7 @@ async def get_file_download_url(
     db: Annotated[AsyncSession, Depends(get_db)],
     project_id: uuid.UUID = Path(...),
     file_id: uuid.UUID = Path(...),
+    crdt_protected: bool = False,
 ) -> APIResponse[FileURL]:
     """
     获取文件下载URL
@@ -52,8 +53,25 @@ async def get_file_download_url(
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
+    if crdt_protected:
+        data = FileDAO.get_r2_file_data(file_id)
+        doc = LoroDoc()
+        try:
+            doc.import_(data)
+        except BaseException:
+            try:
+                new_file_content = doc.export(ExportMode.Snapshot())
+            except:
+                new_file_content = b""
+
+            try:
+                FileDAO.update_r2_file(new_file_content, file_id)
+            except:
+                raise HTTPException(status_code=400, detail="CRDT Protection Failed")
+
     url = await FileDAO.generate_get_obj_link_for_file(file=current_file, expiration=3600)
     return APIResponse(code=200, data=FileURL(url=url), msg="success")
+
 
 @router.get("/{file_id:uuid}/crdt", response_model=APIResponse[str])
 async def get_file_crdt_missing_ops(
