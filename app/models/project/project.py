@@ -172,7 +172,7 @@ class MemberInfo(Base):
     username: str = Field(..., max_length=255)
     email: EmailStr = Field(..., max_length=255)
     permission: Optional[ProjectPermission] = Field(default=None)
-
+    avatar_url: Optional[str] = Field(default=None)
 
 class MemberCreateUpdate(Base):
     permission: ProjectPermission | None = Field(default=None)
