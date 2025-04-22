@@ -5,7 +5,8 @@ import os
 import requests
 from app.core.config import settings
 from app.models.project.file import FileCreateUpdate
-from app.models.project.project import MemberCreateUpdate, ProjectCreate, ProjectPermission, ProjectType
+from app.models.project.project import (MemberCreateUpdate, ProjectCreate,
+                                        ProjectPermission, ProjectType)
 from app.repositories.project.chat import ChatDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
@@ -57,5 +58,6 @@ async def create_template_projects(db: AsyncSession) -> None:
             file, url = await FileDAO.create_update_file(
                 file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
             )
+            # TODO: change to CRDT snapshot
             with open(filepath, "rb") as f:
                 requests.put(url, data=f)

@@ -28,8 +28,6 @@ class TestAdminLogin(unittest.TestCase):
         )
         self.assertTrue(response.ok, msg=f"response code: {response.text}")
 
-        # print(response.json())
-
     def tearDown(self):
         pass
 

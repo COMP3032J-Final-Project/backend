@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+from io import BytesIO
 from pathlib import PureWindowsPath
 from typing import List, Optional
 
@@ -12,7 +13,6 @@ from app.models.project.project import Project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from io import BytesIO
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -143,7 +143,7 @@ class FileDAO:
         """
         复制文件
         """
-        
+
         if not target_project:
             target_project = source_file.project
             filename = get_copy_filename(source_file.filename)
@@ -248,7 +248,7 @@ class FileDAO:
     @staticmethod
     def update_r2_file(content: bytes, file_id: str | uuid.UUID) -> None:
         """
-        File id is 
+        File id is
         """
         frp = FileDAO.get_remote_file_path(file_id)
         try:
@@ -260,7 +260,7 @@ class FileDAO:
     def get_r2_file_data(file_id: str | uuid.UUID) -> bytes:
         buffer = BytesIO()
         frp = FileDAO.get_remote_file_path(file_id)
-        
+
         try:
             r2client.download_fileobj(settings.R2_BUCKET, frp, buffer)
             buffer.seek(0)
@@ -269,49 +269,3 @@ class FileDAO:
             buffer.close()
 
         return data
-
-    # @staticmethod
-    # async def push_file_to_r2(file: File, localpath: str = "") -> None:
-    #     """
-    #     上传文件至云端
-    #     使用样例：
-    #         push_file_to_r2(file: File)
-    #         push_file_to_r2(file: File, localpath:)
-    #     如果规定localpath则覆写本地路径的取值
-    #     """
-    #     flp = localpath if localpath else FileDAO.get_temp_file_path(file=file)
-    #     frp = FileDAO.get_remote_file_path(file=file)
-    #     try:
-    #         with open(flp, "rb") as f:
-    #             r2client.upload_fileobj(Fileobj=f, Bucket=settings.R2_BUCKET, Key=frp)
-    #     except botocore.exceptions.ClientError as error:
-    #         logger.error(error)
-
-    # @staticmethod
-    # def list_r2_keys(prefix: str, maxkeys=100) -> List[str]:
-    #     """
-    #     R2 key = 远程文件夹+远程文件名
-    #     """
-    #     contents: List[str] = []
-    #     try:
-    #         # this handles the more generic batched case.
-    #         response = r2client.list_objects_v2(Bucket=settings.R2_BUCKET, Prefix=prefix, MaxKeys=maxkeys)
-    #         contents.extend(content["Key"] for content in response["Contents"])
-    #         while "NextContinuationToken" in response:
-    #             continuation_token = response["NextContinuationToken"]
-    #             response = r2client.list_objects_v2(
-    #                 Bucket="hivey-files", Prefix=prefix, MaxKeys=maxkeys, ContinuationToken=continuation_token
-    #             )
-    #             contents.extend(content["Key"] for content in response["Contents"])
-
-    #     except (botocore.exceptions.ClientError, KeyError) as error:
-    #         logger.error(error)
-
-    #     return contents
-
-    # @staticmethod
-    # def list_project_r2_keys(project_id: uuid.UUID) -> List[str]:
-    #     """
-    #     拉取某一特定project对应的文件
-    #     """
-    #     return FileDAO.list_r2_keys(prefix=force_posix(os.path.join("project", str(project_id))))
