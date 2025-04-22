@@ -12,7 +12,8 @@ from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel.ext.asyncio.session import AsyncSession
 from loro import ExportMode, VersionVector, LoroDoc
-from base64 import b64decode, b64encode
+from base64 import b64encode
+from lib.utils import decode_base64url
 from .crdt_handler import crdt_handler
 from loguru import logger
 
@@ -89,7 +90,7 @@ async def get_file_crdt_missing_ops(
 
     doc = await crdt_handler.get_doc(str(current_file.id))
     try:
-        vv = VersionVector.decode(b64decode(opLogVersion))
+        vv = VersionVector.decode(decode_base64url(opLogVersion))
     except:
         raise HTTPException(status_code=400, detail="Version vector decode error.")
 
