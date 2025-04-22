@@ -293,6 +293,11 @@ class CrdtHandler:
                 
             if self.should_upload_to_r2:
                 async with self._upload_state_lock:
+                    # FIXME, when there is already one uploading task for file_id
+                    # we should also record the newest received update(loro doc)
+                    # in case there is no updates for file with file_id after
+                    # `r2_upload_min_interval_seconds` so that we cannot upload
+                    # the latest state of file with file_id to r2
                     if file_id in self._upload_in_progress:
                         return updated_doc
                     
