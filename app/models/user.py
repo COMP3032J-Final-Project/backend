@@ -69,7 +69,6 @@ class UserInfo(Base):
     )
     is_active: bool = Field(default=True, description="是否激活")
     is_superuser: bool = Field(default=False, description="是否为超级用户")
-    avatar_url: Optional[str] = Field(default=None)
 
     model_config = ConfigDict(
         json_schema_extra={

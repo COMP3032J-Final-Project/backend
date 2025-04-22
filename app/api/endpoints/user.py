@@ -45,7 +45,6 @@ async def get_me(current_user: Annotated[User, Depends(get_current_user)]) -> AP
     获取当前用户信息
     """
     user_info = UserInfo.model_validate(current_user)
-    user_info.avatar_url = await UserDAO.get_avatar_url(current_user)
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
 
 
@@ -120,11 +119,21 @@ async def get_user(
     通过用户名获取用户信息
     """
     user_info = UserInfo.model_validate(target_user)
-    user_info.avatar_url = await UserDAO.get_avatar_url(target_user)
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
 
 
-@router.put("/avatar", response_model=APIResponse)
+@router.get("/avatar/", response_model=APIResponse)
+async def get_avatar(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> APIResponse:
+    """
+    获取用户头像
+    """
+    avatar_url = await UserDAO.get_avatar_url(current_user)
+    return APIResponse(code=200, data=avatar_url, msg="success")
+
+
+@router.put("/avatar/", response_model=APIResponse)
 async def update_avatar(
     user_update_avatar: UserUpdateAvatar,
     current_user: Annotated[User, Depends(get_current_user)],
