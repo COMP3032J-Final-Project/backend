@@ -24,3 +24,4 @@ boto3~=1.37.13
 requests~=2.32.3
 aspubsub~=0.1.3
 loro~=1.5.0
+watchdog~=6.0.0
