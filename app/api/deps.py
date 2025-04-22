@@ -126,16 +126,16 @@ async def get_current_project(
     return project
 
 
-async def get_current_file(
+async def get_current_project_file(
     current_user: User,
     project_id: uuid.UUID,
     file_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> File:
+) -> tuple[Project, File]:
     current_project = await get_current_project(current_user, project_id, db)
 
     file = await FileDAO.get_file_by_id(file_id, db)
     if not file or file.project_id != current_project.id:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return file
+    return current_project, file

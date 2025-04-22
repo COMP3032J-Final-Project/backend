@@ -1,10 +1,10 @@
 import uuid
 from typing import Annotated
 
-from app.api.deps import get_current_file, get_current_project, get_current_user, get_db
+from app.api.deps import get_current_project_file, get_current_project, get_current_user, get_db
 from app.api.endpoints.project.websocket_handlers import get_project_channel_name, project_general_manager
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL
+from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL, FilesDelete
 from app.models.project.project import Project
 from app.models.project.websocket import EventScope, FileAction, Message
 from app.models.user import User
@@ -46,7 +46,7 @@ async def get_file_download_url(
     """
     获取文件下载URL
     """
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查文件是否存在于 R2
     is_exists = await FileDAO.check_file_exist_in_r2(current_file)
@@ -82,7 +82,8 @@ async def get_file_crdt_missing_ops(
     file_id: uuid.UUID = Path(...),
 ):
     # 检查文件是否存在于 R2
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
+    
     is_exists = await FileDAO.check_file_exist_in_r2(current_file)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
@@ -93,28 +94,26 @@ async def get_file_crdt_missing_ops(
     except:
         raise HTTPException(status_code=400, detail="Version vector decode error.")
 
-
     raw_updates = doc.export(ExportMode.Updates(vv))
     updates = b64encode(raw_updates)
     return APIResponse(code=200, data=updates, msg="success")
 
 
-
-@router.delete("/{file_id:uuid}", response_model=APIResponse[File])
+@router.delete("/{file_id:uuid}", response_model=APIResponse)
 async def delete_file(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     project_id: uuid.UUID = Path(...),
     file_id: uuid.UUID = Path(...),
-) -> APIResponse[File]:
+) -> APIResponse:
     """
     删除文件
     """
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to delete this file")
 
@@ -126,14 +125,14 @@ async def delete_file(
     try:
         if await FileDAO.delete_file(file=current_file, db=db):
             # 广播
-            channel = get_project_channel_name(current_file.project.id)
+            channel = get_project_channel_name(current_project.id)
             await project_general_manager.publish(
                 channel,
                 Message(
                     client_id=str(current_user.id),
                     scope=EventScope.FILE,
                     action=FileAction.DELETED,
-                    payload=current_file.model_dump(),
+                    payload=[file_id],
                 ).model_dump_json(),
             )
             return APIResponse(code=200, msg="success")
@@ -142,6 +141,66 @@ async def delete_file(
         logger.error(f"Error deleting file: {e}")
 
     raise HTTPException(status_code=500, detail="Failed to delete file")
+
+
+@router.delete("/", response_model=APIResponse)
+async def delete_files(
+    files_delete: FilesDelete,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+):
+    """
+    删除多个文件
+    """
+    current_project = await get_current_project(current_user, project_id, db)
+
+    file_ids = set(files_delete.file_ids)
+    files = []
+    invalid_files = []
+    unauthorized_files = []
+
+    for file_id in file_ids:
+        file = await FileDAO.get_file_by_id(file_id, db)
+        if not file:
+            invalid_files.append(str(file_id))
+            continue
+
+        is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+        is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
+        if current_project.id != file.project_id or not is_member or is_viewer:
+            unauthorized_files.append(str(file_id))
+            continue
+
+        files.append(file)
+
+    if invalid_files or unauthorized_files:
+        error_messages = []
+        if invalid_files:
+            error_messages.append(f"Files not found: {', '.join(invalid_files)}")
+        if unauthorized_files:
+            error_messages.append(f"No permission to delete files: {', '.join(unauthorized_files)}")
+        raise HTTPException(status_code=400, detail=" | ".join(error_messages))
+
+    for file in files:
+        await FileDAO.delete_file(file, db)
+
+    try:
+        # 单次广播
+        channel = get_project_channel_name(current_project.id)
+        await project_general_manager.publish(
+            channel,
+            Message(
+                client_id=str(current_user.id),
+                scope=EventScope.FILE,
+                action=FileAction.DELETED,
+                payload=file_ids,
+            ).model_dump_json(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to broadcast file deletion: {str(e)}")
+
+    return APIResponse(code=200, msg="success")
 
 
 @router.post("/create_update", response_model=APIResponse[FileUploadResponse])
@@ -177,11 +236,11 @@ async def check_file_exist(
     """
     确认文件已上传到R2
     """
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
@@ -191,7 +250,7 @@ async def check_file_exist(
 
         # 广播
         try:
-            channel = get_project_channel_name(current_file.project.id)
+            channel = get_project_channel_name(current_project.id)
             await project_general_manager.publish(
                 channel,
                 Message(
@@ -220,11 +279,11 @@ async def mv(
     """
     移动/重命名文件
     """
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
@@ -241,7 +300,7 @@ async def mv(
     # 广播
     try:
         file_action = FileAction.MOVED if file_create_update.filepath else FileAction.RENAMED
-        channel = get_project_channel_name(current_file.project.id)
+        channel = get_project_channel_name(current_project.id)
         await project_general_manager.publish(
             channel,
             Message(
@@ -268,11 +327,11 @@ async def cp(
     """
     复制文件
     """
-    current_file = await get_current_file(current_user, project_id, file_id, db)
+    current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_file.project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_file.project, current_user, db)
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
     if not is_member or is_viewer:
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
@@ -285,7 +344,7 @@ async def cp(
         file = await FileDAO.copy_file(
             source_file=current_file,
             target_file_create_update=file_create_update,
-            target_project=current_file.project,
+            target_project=current_project,
             db=db,
         )
     except Exception as error:
@@ -293,7 +352,7 @@ async def cp(
 
     # 广播
     try:
-        channel = get_project_channel_name(current_file.project.id)
+        channel = get_project_channel_name(current_project.id)
         await project_general_manager.publish(
             channel,
             Message(

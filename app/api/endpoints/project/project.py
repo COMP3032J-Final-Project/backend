@@ -264,8 +264,9 @@ async def delete_projects(
 ) -> APIResponse:
     """删除当前用户某些项目"""
     project_ids = set(projects_delete.project_ids)
-    invalid_projects = []
-    unauthorized_projects = []
+    projects = []
+    invalid_projects = []  # 无效项目
+    unauthorized_projects = []  # 无权限项目
 
     # 验证项目
     for project_id in project_ids:
@@ -273,9 +274,13 @@ async def delete_projects(
         if not project:
             invalid_projects.append(str(project_id))
             continue
+
         is_owner = await ProjectDAO.is_project_owner(project, current_user, db)
         if not is_owner:
             unauthorized_projects.append(str(project_id))
+            continue
+
+        projects.append(project)
 
     # 若无效或无权限
     if invalid_projects or unauthorized_projects:
@@ -287,8 +292,7 @@ async def delete_projects(
         raise HTTPException(status_code=400, detail=" | ".join(error_messages))
 
     # 删除项目
-    for project_id in project_ids:
-        project = await ProjectDAO.get_project_by_id(project_id, db)
+    for project in projects:
         await ProjectDAO.delete_project(project, db)
 
     # 向被删除的全部项目发送广播

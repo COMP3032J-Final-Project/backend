@@ -20,6 +20,9 @@ class FileURL(Base):
 class FileUploadResponse(Base):
     file_id: uuid.UUID
     url: str | None = Field(default=None, max_length=1024)
+    
+class FilesDelete(Base):
+    file_ids: list[uuid.UUID] = Field(...)
 
 
 class File(BaseDB, table=True):
