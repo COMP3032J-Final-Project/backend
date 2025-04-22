@@ -9,6 +9,7 @@ from app.api.deps import get_current_project, get_db, get_current_user_ws
 from app.models.project.project import MemberInfo, Project
 from app.models.user import User
 from app.repositories.project.project import ProjectDAO
+from app.repositories.user import UserDAO
 from loguru import logger
 
 from pydantic import ValidationError
@@ -51,13 +52,29 @@ async def project(
     channel = get_project_channel_name(current_project.id)
     try:
         await project_general_manager.subscribe(client_id, channel, websocket)
+
+        # get all connected client ids in this channel
+        channel_client_ids = await project_general_manager._get_client_ids_subscribed_to_channel(channel)
+        connected_members = []
+
+        for cid in channel_client_ids:
+            user = await UserDAO.get_user_by_id(uuid.UUID(cid), db)
+            if user:
+                member = MemberInfo(
+                    user_id=user.id,
+                    username=user.username,
+                    email=user.email,
+                    permission=await ProjectDAO.get_project_permission(current_project, user, db),
+                )
+                connected_members.append(member.model_dump())
+
         await project_general_manager.publish(
             channel,
             ClientMessage(
                 client_id=client_id,
                 scope=EventScope.MEMBER,
                 action=MemberAction.JOINED,
-                payload=member_info.model_dump(),
+                payload=connected_members,
             ).model_dump_json(),
         )
     except Exception as e:
