@@ -5,12 +5,17 @@ import redis.asyncio as aioredis
 from aiocache.serializers import NullSerializer
 from .config import settings
 
+cache_settings = {
+    'namespace': "hivey",
+    'serializer': NullSerializer(encoding=None)
+}
+
 url = settings.AIOCACHE_URL
 if url.startswith("memory://"):
-    cache = SimpleMemoryCache(namespace="hivey")
+    cache = SimpleMemoryCache(**cache_settings)
 elif url.startswith("redis://"):
     redis_client = aioredis.Redis.from_url(url, decode_responses=False)
-    cache = RedisCache(redis_client, namespace="hivey", serializer=NullSerializer())
+    cache = RedisCache(redis_client, **cache_settings)
 else:
     raise Exception("Invalid settings.AIOCACHE_URL")
 
