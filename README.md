@@ -54,13 +54,27 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 
 ## 运行
 
-### 开发环境
+### 后台任务
+
+```
+saq app.tasks.saq_settings
+```
+
+启动web界面监控后台任务
+
+```
+saq app.tasks.saq_settings --web
+```
+
+### 主程序
+
+#### 开发环境
 
 ``` sh
 fastapi dev ./app
 ```
 
-### 生产环境
+#### 生产环境
 
 Please replace the content inside square brackets with the actual worker number
 you decide. Worker number reference: <https://kisspeter.github.io/fastapi-performance-optimization/workers_and_threads.html>
