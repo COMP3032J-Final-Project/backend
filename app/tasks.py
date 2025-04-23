@@ -43,7 +43,8 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 
     task_cache_key = f"task:perform_project_initialization:{project_id}/status"
     task_status = await cache.get(task_cache_key);
-    if task_status == "success":
+    # redis backend raw data is bytes type
+    if task_status == b"success" or task_status == "success": 
         # TODO
         # currently we send to all members
         # in the future,  we will use `send_to_client` method and `aspubsub`
@@ -55,6 +56,8 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
             action=ProjectAction.INITIALIZE,
             payload="success",
         ).model_dump_json())
+
+        return
 
     try:
         async with async_session() as db:
