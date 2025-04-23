@@ -134,6 +134,19 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 
         await cache.set(task_cache_key, "failed");
         await ws_send_project_initialization_result_message(project_channel_name, "failed")
+
+
+
+
+
+
+
+
+
+
+
+
+
         
 saq_settings = {
     "queue": background_tasks,

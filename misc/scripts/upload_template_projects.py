@@ -1,7 +1,8 @@
 import glob
-import logging
+from loguru import logger
 import os
 
+import asyncio
 import requests
 from app.core.config import settings
 from app.models.project.file import FileCreateUpdate
@@ -11,11 +12,14 @@ from app.repositories.project.chat import ChatDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
+from app.models.project.file import File
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-logger = logging.getLogger("uvicorn.error")
 from pathlib import Path
-
+from app.core.db import async_session, engine
+from loro import ExportMode, LoroDoc
+from app.core.r2client import r2client
+from lib.utils import is_likely_binary
+from io import BytesIO
 
 async def create_template_projects(db: AsyncSession) -> None:
     # with open("")
@@ -26,6 +30,7 @@ async def create_template_projects(db: AsyncSession) -> None:
     admin_projects = await ProjectDAO.get_all_projects(user=admin_user, db=db)
 
     for folder in os.scandir(os.path.normpath("./templates")):
+        logger.info(f"Uploading template {folder}")
         # initialize projects based on existing file structure
 
         project_name = folder.name.replace("_", " ")
@@ -55,9 +60,43 @@ async def create_template_projects(db: AsyncSession) -> None:
 
         for filepath, relpath in zip(filepaths, relpaths):
             head, tail = os.path.split(relpath)
-            file, url = await FileDAO.create_update_file(
-                file_create_update=FileCreateUpdate(filename=tail, filepath=head), project=template_project, db=db
+            file = File(
+                filename=tail, filepath=head, project_id=template_project.id
             )
-            # TODO: change to CRDT snapshot
+            db.add(file)
+            await db.commit()
+            await db.refresh(file)
+            
             with open(filepath, "rb") as f:
-                requests.put(url, data=f)
+                # requests.put(url, data=f)
+                data = f.read()
+                isBinary = is_likely_binary(data)
+                upload_content = None
+                if isBinary:
+                    upload_content = data
+                else:
+                    try:
+                        doc = LoroDoc()
+                        text = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID)
+                        text.insert(0, data.decode())
+                        doc.commit()
+                        upload_content = doc.export(ExportMode.Snapshot())
+                    except:
+                        upload_content = data
+
+            frp = FileDAO.get_remote_file_path(file.id)
+            r2client.upload_fileobj(BytesIO(data), Bucket=settings.R2_BUCKET, Key=frp)
+
+
+        logger.info(f"Finished uploading template {folder}")
+
+
+async def main():
+    async with async_session() as db:
+        await create_template_projects(db)
+
+    if engine:
+        await engine.dispose()
+
+if __name__ == "__main__":
+    asyncio.run(main())

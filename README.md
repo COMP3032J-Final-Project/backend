@@ -87,6 +87,16 @@ fastapi run --workers [2 x $num_cores + 1] ./app
 ```sh
 python3 -m unittest
 ```
+
+## 脚本
+
+上传template
+
+```
+# 在项目根目录下
+python -m misc.scripts.upload_template_projects
+```
+
 ## API 视图
 
 <http://localhost:8000/docs>
