@@ -2,12 +2,12 @@
 import logging
 import os
 import secrets
+from pathlib import Path
 from typing import List
 
 from dotenv import load_dotenv
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings
-from pathlib import Path
 
 logger = logging.getLogger("uvicorn.error")
 

@@ -40,7 +40,7 @@ async def startup_handler() -> None:
     observer = Observer()
     event_handler = MyHandler()
     # Set up observer to watch a specific directory
-    directory_to_watch = settings.TEMP_PATH
+    directory_to_watch = settings.TEMP_PROJECTS_PATH
     observer.schedule(event_handler, directory_to_watch, recursive=True)
 
     # Start the observer
