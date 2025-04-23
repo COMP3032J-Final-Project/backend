@@ -11,10 +11,22 @@ from app.repositories.user import UserDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.api.endpoints.project.crdt_handler import crdt_handler
+from app.api.endpoints.project.websocket_handlers import (
+    project_general_manager, get_project_channel_name
+)
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
+from app.core.aiocache import cache
+
+from app.models.project.websocket import (
+    Message,
+    EventScope,
+    ProjectAction
+)
+
 import uuid
+
 
 async def perform_project_initialization(ctx, project_id_str: str, user_id_str: str):
     """
@@ -25,13 +37,24 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
     user_id = uuid.UUID(user_id_str)
     logger.info(f"Starting background initialization for project {project_id} by user {user_id}")
 
-    # --- Idempotency Check (Optional but Recommended) ---
-    # Use a cache key specific to the task execution state
-    # task_cache_key = f"hivey:task:init:{project_id}/running"
-    # if await hivey_cache.get(task_cache_key):
-    #     logger.warning(f"Initialization task for project {project_id} already running or recently completed.")
-    #     return # Or handle as needed
-    # await hivey_cache.set(task_cache_key, True, timeout=300) # Set lock with timeout
+    project_channel_name = get_project_channel_name(project_id_str)
+
+    # use cache to prevent duplicated initialization
+
+    task_cache_key = f"task:perform_project_initialization:{project_id}/status"
+    task_status = await cache.get(task_cache_key);
+    if task_status is "success":
+        # TODO
+        # currently we send to all members
+        # in the future,  we will use `send_to_client` method and `aspubsub`
+        # library should be modified to also store client websocket connection information
+        # in redis
+        
+        await project_general_manager.publish(project_channel_name, Message(
+            scope=EventScope.PROJECT,
+            action=ProjectAction.INITIALIZE,
+            payload="success",
+        ).model_dump_json())
 
     try:
         async with async_session() as db:
@@ -96,20 +119,30 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
                     )
 
         logger.info(f"Successfully finished background initialization for project {project_id}")
+        
+        await cache.set(task_cache_key, "success");
 
+        await project_general_manager.publish(project_channel_name, Message(
+            scope=EventScope.PROJECT,
+            action=ProjectAction.INITIALIZE,
+            payload="success",
+        ).model_dump_json())
+        
     except Exception as e:
         logger.error(
             f"Unhandled error during background initialization for project "
             f"{project_id}: {e}",
             exc_info=True
         )
+
+        await cache.set(task_cache_key, "failed");
         
-        # Optional: Implement retry logic within Huey's capabilities if needed
-        # raise e # Re-raise if you want Huey to potentially retry the task
-
-    # finally:
-    # await hivey_cache.delete(task_cache_key) # Clean up lock
-
+        await project_general_manager.publish(project_channel_name, Message(
+            scope=EventScope.PROJECT,
+            action=ProjectAction.INITIALIZE,
+            payload="failed",
+        ).model_dump_json())
+        
 saq_settings = {
     "queue": background_tasks,
     "functions": [
