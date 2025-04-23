@@ -27,6 +27,18 @@ from app.models.project.websocket import (
 
 import uuid
 
+async def ws_send_project_initialization_result_message(channel: str, payload: str):
+    # TODO
+    # currently we send to all members
+    # in the future,  we will use `send_to_client` method and `aspubsub`
+    # library should be modified to also store client websocket connection information
+    # in redis
+    await project_general_manager.publish(channel, Message(
+        scope=EventScope.PROJECT,
+        action=ProjectAction.INITIALIZE,
+        payload=payload,
+    ).model_dump_json())
+
 
 async def perform_project_initialization(ctx, project_id_str: str, user_id_str: str):
     """
@@ -45,18 +57,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
     task_status = await cache.get(task_cache_key);
     # redis backend raw data is bytes type
     if task_status == b"success" or task_status == "success": 
-        # TODO
-        # currently we send to all members
-        # in the future,  we will use `send_to_client` method and `aspubsub`
-        # library should be modified to also store client websocket connection information
-        # in redis
-        
-        await project_general_manager.publish(project_channel_name, Message(
-            scope=EventScope.PROJECT,
-            action=ProjectAction.INITIALIZE,
-            payload="success",
-        ).model_dump_json())
-
+        await ws_send_project_initialization_result_message(project_channel_name, "success")
         return
 
     try:
@@ -70,19 +71,17 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
             current_project = await ProjectDAO.get_project_by_id(project_id, db)
             if not current_project:
                 logger.error(f"Background Init: Project {project_id} not found.")
-                # await hivey_cache.delete(task_cache_key) # Clean up lock
+                await cache.set(task_cache_key, "failed");
+                await ws_send_project_initialization_result_message(project_channel_name, "failed")
                 return
-             
-            # Add permission check here if needed, e.g.,
-            # if current_project.owner_id != current_user.id and ... :
-            #    logger.error(...) return
 
             logger.info(f"Processing files for project: {current_project.name} ({project_id})")
             project_files = await ProjectDAO.get_files(current_project)
 
             if not project_files:
                 logger.info(f"Project {project_id} has no files to initialize.")
-                # await hivey_cache.delete(task_cache_key) # Clean up lock
+                await cache.set(task_cache_key, "success");
+                await ws_send_project_initialization_result_message(project_channel_name, "success")
                 return
 
             # --- Process each file ---
@@ -124,12 +123,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
         logger.info(f"Successfully finished background initialization for project {project_id}")
         
         await cache.set(task_cache_key, "success");
-
-        await project_general_manager.publish(project_channel_name, Message(
-            scope=EventScope.PROJECT,
-            action=ProjectAction.INITIALIZE,
-            payload="success",
-        ).model_dump_json())
+        await ws_send_project_initialization_result_message(project_channel_name, "success")
         
     except Exception as e:
         logger.error(
@@ -139,12 +133,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
         )
 
         await cache.set(task_cache_key, "failed");
-        
-        await project_general_manager.publish(project_channel_name, Message(
-            scope=EventScope.PROJECT,
-            action=ProjectAction.INITIALIZE,
-            payload="failed",
-        ).model_dump_json())
+        await ws_send_project_initialization_result_message(project_channel_name, "failed")
         
 saq_settings = {
     "queue": background_tasks,
