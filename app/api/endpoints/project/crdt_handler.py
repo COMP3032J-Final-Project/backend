@@ -26,7 +26,7 @@ class CrdtHandler:
         lorocrdt_text_container_id: str = "codemirror",
         temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
         cache: Any = None,
-        cache_namespace: str = "hivey:crdt:",  # f"{cache_namespace}{file_id}"
+        cache_namespace: str = "crdt",  # f"{cache_namespace}{file_id}"
     ):
         if cache is None:
             self.cache = hivey_cache
@@ -53,7 +53,8 @@ class CrdtHandler:
             logger.info(f"Temp directory for local files: {self.temp_directory_path}")
 
     def get_cache_key(self, file_id: str) -> str:
-        return f"{self.cache_namespace}{file_id}"
+        # NOTE that there is another namespace configured in `settings.cache`
+        return f"{self.cache_namespace}:{file_id}" 
             
     async def cleanup(self):
         logger.info("Cleaning up CrdtHandler...")

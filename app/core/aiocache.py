@@ -7,10 +7,10 @@ from .config import settings
 
 url = settings.AIOCACHE_URL
 if url.startswith("memory://"):
-    cache = SimpleMemoryCache()
+    cache = SimpleMemoryCache(namespace="hivey")
 elif url.startswith("redis://"):
     redis_client = aioredis.Redis.from_url(url, decode_responses=False)
-    cache = RedisCache(redis_client, namespace="main", serializer=NullSerializer())
+    cache = RedisCache(redis_client, namespace="hivey", serializer=NullSerializer())
 else:
     raise Exception("Invalid settings.AIOCACHE_URL")
 

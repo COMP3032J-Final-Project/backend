@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     DB_HOST: str = os.getenv("HIVEY_B_DB_HOST", "localhost")
     DB_PORT: str = os.getenv("HIVEY_B_DB_PORT", "3306")
 
+    SAQ_URL: str = os.getenv("HIVEY_B_SAQ_URL", "redis://localhost:6379")
     AIOCACHE_URL: str = os.getenv("HIVEY_B_AIOCACHE_URL", "memory://").strip()
     PUB_SUB_BACKEND_URL: str = os.getenv("HIVEY_B_PUB_SUB_BACKEND_URL", "memory://").strip()
 

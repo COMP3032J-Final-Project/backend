@@ -6,6 +6,7 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 
 - python >= 3.11
 - MySQL/MariaDB (生产环境要求，如果你仅仅是测试，则可以用 SQLite(无需安装))
+- Redis ([saq](https://github.com/tobymao/saq) doesn't support in-memory queue)
 
 ## 初始
 

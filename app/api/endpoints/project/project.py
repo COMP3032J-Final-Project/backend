@@ -31,7 +31,8 @@ from loro import LoroDoc
 from lib.utils import is_likely_binary
 from app.core.config import settings
 from app.core.aiocache import cache
-from app.api.endpoints.project.crdt_handler import crdt_handler 
+from app.api.endpoints.project.crdt_handler import crdt_handler
+from app.core.background_tasks import background_tasks
 
 router = APIRouter()
 
@@ -231,36 +232,14 @@ async def initialize_project(
     TODO implement auto cleanup project resources (local temporarily files) when
     project is inactive.
     """
-    # TODO use `aiocache` to store initialization status
-    current_project = await get_current_project(current_user, project_id, db)
+    project = await get_current_project(current_user, project_id, db)
 
-    # logger.info(await cache.get(f"hivey:project:{project_id}/initialized"))
-    project_files = await ProjectDAO.get_files(current_project)
-    for file in project_files:
-        fileobj_bytes = FileDAO.get_r2_file_data(file.id)
-        doc = LoroDoc()
-        
-        isBinary = False
-        try:
-            doc.import_(fileobj_bytes)
-        except BaseException:
-            isBinary = True
+    await background_tasks.enqueue(
+        "perform_project_initialization",
+        project_id_str=str(project.id),
+        user_id_str=str(current_user.id)
+    )
 
-        
-        target_path = settings.TEMP_PROJECTS_PATH / str(project_id) / file.filename
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        if isBinary:
-            target_path.write_bytes(fileobj_bytes)
-        else:
-            text_content = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID).to_string()
-            target_path.write_text(text_content)
-
-            # set initial snapshot for crdt_handler
-            await crdt_handler._set_doc_to_cache(str(file.id), doc)
-            
-            
-    
     return APIResponse(code=202, data="success", msg="success")
 
 
