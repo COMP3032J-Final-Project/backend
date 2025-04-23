@@ -1,5 +1,6 @@
 # 用于实现 User 相关模型
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List
+import uuid
 from pydantic import EmailStr, ConfigDict
 from sqlmodel import Field, Relationship
 
@@ -36,11 +37,14 @@ class User(BaseDB, table=True):
         default=False,
     )
 
-    # TODO 完善用户删除后的级联操作
     projects: List["ProjectUser"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
+
+    @property
+    def user_id(self) -> uuid.UUID:
+        return self.id
 
     def __repr__(self) -> str:
         return (
@@ -54,6 +58,7 @@ class UserInfo(Base):
     用户基本信息模型
     """
 
+    user_id: uuid.UUID = Field(...)
     username: str = Field(
         ...,  # 必填字段
         min_length=3,

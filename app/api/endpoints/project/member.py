@@ -10,7 +10,6 @@ from app.api.endpoints.project.websocket_handlers import get_project_channel_nam
 from app.models.base import APIResponse
 from app.models.project.project import (
     MemberCreateUpdate,
-    Project,
     ProjectPermission,
     ProjectPermissionData,
     MemberInfo,

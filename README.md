@@ -29,13 +29,13 @@ this is the repository hosting the backend for the COMP3032J Final Project.
       - Windows CMD
 
       ```sh
-      .venv\Scripts\activate.bat
+      .\venv\Scripts\activate.bat
       ```
 
       - Windows PowerShell
 
       ```sh
-      .venv\Scripts\Activate.ps1
+      .\venv\Scripts\activate.bat
       ```
 
 4. 安装 Python 依赖
