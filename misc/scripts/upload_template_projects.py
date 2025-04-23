@@ -85,7 +85,7 @@ async def create_template_projects(db: AsyncSession) -> None:
                         upload_content = data
 
             frp = FileDAO.get_remote_file_path(file.id)
-            r2client.upload_fileobj(BytesIO(data), Bucket=settings.R2_BUCKET, Key=frp)
+            r2client.upload_fileobj(BytesIO(upload_content), Bucket=settings.R2_BUCKET, Key=frp)
 
 
         logger.info(f"Finished uploading template {folder}")
