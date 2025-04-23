@@ -5,26 +5,21 @@ from loguru import logger
 from pathlib import Path
 import os
 from loro import LoroDoc, ExportMode
-from abc import ABC, abstractmethod
-from collections import defaultdict
-import redis.asyncio as aioredis
 from base64 import b64decode
 # from fastapi import BackgroundTasks # only works inside FastAPI's request/response lifecycle
 
-import time
-import functools
-
-from app.repositories.project.file import FileDAO
 from app.core.aiocache import cache as hivey_cache
+from app.core.background_tasks import background_tasks
+
 
 class CrdtHandler:
     def __init__(
         self,
         should_update_local_files: bool = False,
         should_upload_to_r2: bool = False,
-        r2_upload_min_interval_seconds: float = 1.0,
         lorocrdt_text_container_id: str = "codemirror",
         temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
+        r2_upload_debounce_ttl: float = 1.0,
         cache: Any = None,
         cache_namespace: str = "crdt",  # f"{cache_namespace}{file_id}"
     ):
@@ -36,7 +31,8 @@ class CrdtHandler:
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
         self.temp_directory_path = temp_directory_path
-        self.r2_upload_min_interval_seconds = r2_upload_min_interval_seconds
+        self.r2_upload_debounce_ttl = r2_upload_debounce_ttl
+        self.r2_debounce_cache_namespace = "debounce_r2_upload"
         
         # --- State Management for R2 Uploads ---
         # file_id -> last upload time
@@ -47,14 +43,13 @@ class CrdtHandler:
         
         logger.info(f"Local file updates {'enabled' if should_update_local_files else 'disabled'}")
         logger.info(f"R2 uploads {'enabled' if self.should_upload_to_r2 else 'disabled'}")
-        if self.should_upload_to_r2:
-            logger.info(f"R2 upload minimum interval: {self.r2_upload_min_interval_seconds} seconds")
-        if should_update_local_files:
-            logger.info(f"Temp directory for local files: {self.temp_directory_path}")
 
     def get_cache_key(self, file_id: str) -> str:
         # NOTE that there is another namespace configured in `settings.cache`
-        return f"{self.cache_namespace}:{file_id}" 
+        return f"{self.cache_namespace}:{file_id}"
+
+    def get_r2_debounce_key(self, file_id: str) -> str:
+        return f"{self.r2_debounce_cache_namespace}:{file_id}"
             
     async def cleanup(self):
         logger.info("Cleaning up CrdtHandler...")
@@ -140,46 +135,20 @@ class CrdtHandler:
             logger.error(f"OS error writing local file {target_file_path}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
-            
-    def _upload_task_done_callback(self, file_id: str, task: asyncio.Task):
-        """Callback executed when an upload task finishes (success, error, or cancel)."""
-        async def cleanup_task_state():
-            async with self._upload_state_lock:
-                current_task = self._upload_in_progress.get(file_id)
-                if current_task is task:
-                    del self._upload_in_progress[file_id]
-                else:
-                    logger.warning(
-                        f"Task mismatch during done_callback for {file_id}. Task {task}"
-                        f"finished but found {current_task} in progress."
-                    )
-            try:
-                exception = task.exception()
-                if exception:
-                    logger.error(f"R2 upload task for {file_id} failed with exception: {exception}", exc_info=exception)
-            except asyncio.CancelledError:
-                logger.debug(f"R2 upload task for {file_id} was cancelled.")
-                
-        asyncio.create_task(cleanup_task_state())
-        
-    async def _perform_r2_upload(self, file_id: str, doc: LoroDoc):
-        """Performs the actual R2 upload. Fetches latest state before uploading."""
-        try:
-            snapshot_bytes: bytes = doc.export(ExportMode.Snapshot())
-            await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id)
-            logger.debug(f"Successfully uploaded snapshot to R2 for file_id: {file_id}")
-        except Exception as e:
-            logger.error(f"Error during R2 upload execution for file_id {file_id}: {e}")
-            raise
-        
+
     async def receive_update(
         self, project_id: str,
         file_id: str,
         raw_data: str,
     ) -> LoroDoc | None:
         """
-        Receives update, applies it, schedules R2 upload if interval passed
-        and no upload is currently running for this file_id.
+        For tasks 
+        FIXME
+        Imaging that we already received an update, and we of course  enqueue  the
+        task immediately. It's possible there is an updates comes directly after the
+        previous update, and we don't do anything. What if there is no more updates?
+        so that we don't upload the latest file to r2.
+
         """
         try:
             update_bytes = b64decode(raw_data)
@@ -205,25 +174,18 @@ class CrdtHandler:
                 )
                 
             if self.should_upload_to_r2:
-                async with self._upload_state_lock:
-                    # FIXME, when there is already one uploading task for file_id
-                    # we should also record the newest received update(loro doc)
-                    # in case there is no updates for file with file_id after
-                    # `r2_upload_min_interval_seconds` so that we cannot upload
-                    # the latest state of file with file_id to r2
-                    if file_id in self._upload_in_progress:
-                        return doc
-                    
-                    now = time.monotonic()
-                    last_start = self._last_upload_start_time.get(file_id, 0.0)
-                    if (now - last_start) >= self.r2_upload_min_interval_seconds:
-                        logger.debug(f"Scheduling R2 upload for {file_id}. Interval passed.")
-                        self._last_upload_start_time[file_id] = now
-                        upload_task = asyncio.create_task(self._perform_r2_upload(file_id, doc))
-                        self._upload_in_progress[file_id] = upload_task
-                        callback = functools.partial(self._upload_task_done_callback, file_id)
-                        upload_task.add_done_callback(callback)
-                        
+                debounce_key = self.get_r2_debounce_key(file_id)
+                debounce_status = await self.cache.get(debounce_key)
+                if debounce_status is None:
+                    await background_tasks.enqueue(
+                        "upload_crdt_snapshot_to_r2", file_id=file_id
+                    )
+                    await self.cache.set(
+                        debounce_key,
+                        "debounce",
+                        ttl=self.r2_upload_debounce_ttl
+                    )
+                
             return doc
         
         except Exception as e:

@@ -1,44 +1,22 @@
 # app/tasks.py (or similar location)
 import uuid
 from loguru import logger
-from pathlib import Path
-from loro import LoroDoc, ExportMode
+from loro import LoroDoc
+import asyncio
+from typing import Optional
 
 from app.core.config import settings
 from app.core.db import async_session
-from app.models.user import User
 from app.repositories.user import UserDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.api.endpoints.project.crdt_handler import crdt_handler
-from app.api.endpoints.project.websocket_handlers import (
-    project_general_manager, get_project_channel_name
-)
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
 from app.core.aiocache import cache
 
-from app.models.project.websocket import (
-    Message,
-    EventScope,
-    ProjectAction
-)
-
 import uuid
-
-async def ws_send_project_initialization_result_message(channel: str, payload: str):
-    # TODO
-    # currently we send to all members
-    # in the future,  we will use `send_to_client` method and `aspubsub`
-    # library should be modified to also store client websocket connection information
-    # in redis
-    await project_general_manager.publish(channel, Message(
-        scope=EventScope.PROJECT,
-        action=ProjectAction.INITIALIZE,
-        payload=payload,
-    ).model_dump_json())
-
 
 async def perform_project_initialization(ctx, project_id_str: str, user_id_str: str):
     """
@@ -49,15 +27,12 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
     user_id = uuid.UUID(user_id_str)
     logger.info(f"Starting background initialization for project {project_id} by user {user_id}")
 
-    project_channel_name = get_project_channel_name(project_id_str)
-
     # use cache to prevent duplicated initialization
 
     task_cache_key = f"task:perform_project_initialization:{project_id}/status"
-    task_status = await cache.get(task_cache_key);
-    # redis backend raw data is bytes type
-    if task_status == b"success" or task_status == "success": 
-        await ws_send_project_initialization_result_message(project_channel_name, "success")
+    task_status = await cache.get(task_cache_key)
+
+    if task_status in (b"success", "success"):
         return
 
     try:
@@ -72,16 +47,14 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
             if not current_project:
                 logger.error(f"Background Init: Project {project_id} not found.")
                 await cache.set(task_cache_key, "failed");
-                await ws_send_project_initialization_result_message(project_channel_name, "failed")
                 return
-
+            
             logger.info(f"Processing files for project: {current_project.name} ({project_id})")
             project_files = await ProjectDAO.get_files(current_project)
 
             if not project_files:
                 logger.info(f"Project {project_id} has no files to initialize.")
                 await cache.set(task_cache_key, "success");
-                await ws_send_project_initialization_result_message(project_channel_name, "success")
                 return
 
             # --- Process each file ---
@@ -123,7 +96,6 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
         logger.info(f"Successfully finished background initialization for project {project_id}")
         
         await cache.set(task_cache_key, "success");
-        await ws_send_project_initialization_result_message(project_channel_name, "success")
         
     except Exception as e:
         logger.error(
@@ -133,12 +105,40 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
         )
 
         await cache.set(task_cache_key, "failed");
-        await ws_send_project_initialization_result_message(project_channel_name, "failed")
 
 
 
 
+# --- crdt ----
 
+
+# NOTE make sure it matches crdt_handler's setting
+CRDT_CACHE_NAMESPACE = "crdt"
+def get_crdt_cache_key(file_id: str) -> str:
+    return f"{CRDT_CACHE_NAMESPACE}:{file_id}"
+
+async def upload_crdt_snapshot_to_r2(ctx, file_id: str):
+    """
+    SAQ task to upload the latest CRDT snapshot from cache to R2.
+    """
+    doc = LoroDoc()
+    snapshot_bytes: bytes | None = None
+    cache_key = get_crdt_cache_key(file_id)
+    
+    cached_data: Optional[bytes] = await cache.get(cache_key)
+    if not cached_data:
+        logger.warning(f"No CRDT data found in cache for {file_id} during R2 upload task. Skipping.")
+        return {"status": "skipped", "reason": "no data in cache"}
+    
+    snapshot_bytes = cached_data
+    
+    try:
+        await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id)
+        logger.info(f"Successfully uploaded snapshot to R2 via SAQ task for file_id: {file_id}")
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error during R2 upload execution in SAQ task for {file_id}: {e}")
+        raise
 
 
 
@@ -151,7 +151,8 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 saq_settings = {
     "queue": background_tasks,
     "functions": [
-        perform_project_initialization
+        perform_project_initialization,
+        upload_crdt_snapshot_to_r2
     ],
     "concurrency": 10,
 }

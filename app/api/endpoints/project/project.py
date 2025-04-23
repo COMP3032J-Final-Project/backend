@@ -243,6 +243,21 @@ async def initialize_project(
     return APIResponse(code=202, data="success", msg="success")
 
 
+@router.get("/{project_id:uuid}/initialization_status", response_model=APIResponse[str])
+async def get_project_initialization_status(
+    project_id: uuid.UUID = Path(...),
+):
+    # here we don't check user permission on project since this method is designed to be
+    # called frequently and checking permission isn't important here
+
+    # NOTE should be the same as perform_project_initialization task
+    task_cache_key = f"task:perform_project_initialization:{project_id}/status"
+    result = await cache.get(task_cache_key)
+    result = result.decode() if isinstance(result, bytes) else result
+    # nil, "success", "failed"
+    return APIResponse(code=200, data=result, msg="")
+
+
 @router.put("/{project_id:uuid}", response_model=APIResponse)
 async def update_project(
     project_update: ProjectUpdate,
