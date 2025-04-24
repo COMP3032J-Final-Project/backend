@@ -11,7 +11,7 @@ from base64 import b64decode
 from app.core.aiocache import (
     cache, get_cache_key_crdt, get_cache_key_crdt_upload_r2_debounce,
     get_cache_key_crdt_write_local_file_debounce,
-    get_cache_key_new_file_lock
+    get_cache_key_new_file_lock, get_cache_key_crdt_compile_project_pdf_debounce
 )
 from app.core.background_tasks import background_tasks
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
@@ -20,12 +20,14 @@ from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 class CrdtHandler:
     def __init__(
         self,
+        should_compile_project_pdf: bool = False,
         should_update_local_files: bool = False,
         should_upload_to_r2: bool = False,
         lorocrdt_text_container_id: str = "codemirror",
         debounce_ttl: float = 1.0,
     ):
             
+        self.should_compile_project_pdf = should_compile_project_pdf
         self.lorocrdt_text_container_id = lorocrdt_text_container_id
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
@@ -128,7 +130,7 @@ class CrdtHandler:
 
             await self._set_doc_to_cache(file_id, doc)
              
-            if self.should_update_local_files and doc:
+            if self.should_update_local_files:
                 debounce_key = get_cache_key_crdt_write_local_file_debounce(file_id)
                 debounce_status = await cache.get(debounce_key)
                 if debounce_status is None:
@@ -141,6 +143,22 @@ class CrdtHandler:
                         "debounce",
                         ttl=self.debounce_ttl
                     )
+
+            if self.should_compile_project_pdf:
+                debounce_key = get_cache_key_crdt_compile_project_pdf_debounce(file_id)
+                debounce_status = await cache.get(debounce_key)
+
+                if debounce_status is None:
+                    await background_tasks.enqueue(
+                        "compile_project_pdf",
+                        project_id_str=project_id
+                    )
+                    await cache.set(
+                        debounce_key,
+                        "debounce",
+                        ttl=self.debounce_ttl
+                    )
+                
                 
             if self.should_upload_to_r2:
                 new_file_lock_key = get_cache_key_new_file_lock(file_id)
@@ -168,6 +186,7 @@ class CrdtHandler:
 
 crdt_handler = CrdtHandler(
     lorocrdt_text_container_id=LOROCRDT_TEXT_CONTAINER_ID,
+    should_compile_project_pdf=True,
     should_update_local_files=True,
     should_upload_to_r2=True
 )

@@ -33,7 +33,9 @@ from .websocket_handlers import project_general_manager, get_project_channel_nam
 from loro import LoroDoc
 from lib.utils import is_likely_binary
 from app.core.config import settings
-from app.core.aiocache import cache, get_cache_key_task_ppi
+from app.core.aiocache import (
+    cache, get_cache_key_task_ppi, get_cache_key_project_copmiled_pdf_url
+)
 from app.api.endpoints.project.crdt_handler import crdt_handler
 from app.core.background_tasks import background_tasks
 
@@ -239,7 +241,9 @@ async def initialize_project(
     project = await get_current_project(current_user, project_id, db)
 
     await background_tasks.enqueue(
-        "perform_project_initialization", project_id_str=str(project.id), user_id_str=str(current_user.id)
+        "perform_project_initialization",
+        project_id_str=str(project.id),
+        user_id_str=str(current_user.id)
     )
 
     return APIResponse(code=202, data="success", msg="success")

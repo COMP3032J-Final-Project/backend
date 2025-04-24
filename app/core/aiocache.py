@@ -36,5 +36,17 @@ def get_cache_key_crdt_upload_r2_debounce(file_id: str | UUID):
 def get_cache_key_crdt_write_local_file_debounce(file_id: str | UUID):
     return f"crdt/debounce_write_local_file:{file_id}"
 
+
+def get_cache_key_crdt_compile_project_pdf_debounce(file_id: str | UUID):
+    return f"crdt/debounce_compile_project_pdf:{file_id}"
+
     
+def get_cache_key_project_copmiled_pdf_url(project_id: str | UUID):
+    return f"project/compiled_pdf:{project_id}"
+
+# NOTE they are two coupled functions
+def get_project_channel_name(project_id: str | UUID):
+    return f"project/channel:{project_id}"
+def get_project_id_from_channel_name(channel_name: str) -> str:
+    return "".join(channel_name.split(":")[1:])
 

@@ -21,8 +21,8 @@ class EventScope(str, Enum):
 class ProjectAction(str, Enum):
     DELETE_PROJECT = "delete_project"
     UPDATE_NAME = "update_name"
-    # TODO corresponding payload: "success", "failed"
-    INITIALIZE = "initialize" 
+    UPDATE_COMPILED_PDF = "update_compiled_pdf"
+    
 
 
 class MemberAction(str, Enum):

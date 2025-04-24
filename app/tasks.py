@@ -3,7 +3,7 @@ import uuid
 from loguru import logger
 from loro import ExportMode, LoroDoc
 import asyncio
-from typing import Optional
+from typing import Optional, Any
 from pathlib import Path
 from app.core.config import settings
 from app.core.db import async_session, engine
@@ -15,12 +15,46 @@ from app.api.endpoints.project.crdt_handler import crdt_handler
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
 from app.core.aiocache import (
-    cache, get_cache_key_task_ppi, get_cache_key_crdt, get_cache_key_new_file_lock
+    cache, get_cache_key_task_ppi, get_cache_key_crdt, get_cache_key_new_file_lock,
+    get_cache_key_project_copmiled_pdf_url, get_project_channel_name
 )
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
+from lib.compile_latex import compile_latex_with_latexmk
+from app.models.project.websocket import Message, EventScope, ProjectAction
+import redis.asyncio as aioredis
 import os
 
 import uuid
+
+redis = aioredis.Redis.from_url(settings.PUB_SUB_BACKEND_URL)
+
+async def publish_to_channel(channel: str, message: Any):
+    await redis.publish(channel, message)
+
+def write_file_sync(file_path: str | Path, mode: str, content: str | bytes):
+    with open(file_path, mode) as f:
+        f.write(content)
+
+async def write_to_file(file_id_str: str, mode: str, content: str | bytes):
+    file_id = uuid.UUID(file_id_str)
+    async with async_session() as db:
+        file = await FileDAO.get_file_by_id(file_id, db)
+        if file is None:
+            logger.error(f"file {file_id_str} doesn't exist in database")
+            return
+        
+    target_file_path = FileDAO.get_temp_file_path(file)
+    target_dir = target_file_path.parent
+    
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        await asyncio.to_thread(write_file_sync, target_file_path, mode, content)
+        logger.info(f"Successfully updated local file {target_file_path}")
+    except OSError as e:
+        logger.error(f"OS error writing local file {target_file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
+
 
 async def perform_project_initialization(ctx, project_id_str: str, user_id_str: str):
     """
@@ -74,17 +108,14 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
                     except:
                         is_binary = True
 
-                    target_path = settings.TEMP_PROJECTS_PATH / str(project_id) / file.filename
+                    target_path = FileDAO.get_temp_file_path(file)
                     target_path.parent.mkdir(parents=True, exist_ok=True)
 
                     if is_binary:
-                        # Use async file I/O if possible, or run sync I/O in a thread
-                        # For simplicity, using sync here, but consider aiofiles or asyncio.to_thread
-                        target_path.write_bytes(fileobj_bytes)
+                        await asyncio.to_thread(target_path.write_bytes, fileobj_bytes)
                     else:
                         text_content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
-                        # Use async file I/O if possible
-                        target_path.write_text(text_content, encoding='utf-8')
+                        await asyncio.to_thread(target_path.write_text, text_content, encoding='utf-8')
 
                         # Set initial snapshot for crdt_handler cache
                         await crdt_handler._set_doc_to_cache(str(file.id), doc)
@@ -132,30 +163,6 @@ async def upload_crdt_snapshot_to_r2(ctx, file_id_str: str):
         logger.error(f"Error during R2 upload execution in SAQ task for {file_id_str}: {e}")
         raise
 
-
-def write_file_sync(file_path: str | Path, mode: str, content: str | bytes):
-    with open(file_path, mode) as f:
-        f.write(content)
-
-async def write_to_file(file_id_str: str, mode: str, content: str | bytes):
-    file_id = uuid.UUID(file_id_str)
-    async with async_session() as db:
-        file = await FileDAO.get_file_by_id(file_id, db)
-        if file is None:
-            logger.error(f"file {file_id_str} doesn't exist in database")
-            return
-        
-    target_file_path = FileDAO.get_temp_file_path(file)
-    target_dir = target_file_path.parent
-    
-    try:
-        os.makedirs(target_dir, exist_ok=True)
-        await asyncio.to_thread(write_file_sync, target_file_path, mode, content)
-        logger.info(f"Successfully updated local file {target_file_path}")
-    except OSError as e:
-        logger.error(f"OS error writing local file {target_file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
 
 async def update_local_file_from_cache(ctx, file_id_str: str):
@@ -210,14 +217,31 @@ async def update_cache_and_local_files_from_r2(ctx, file_id_str: str):
         await write_to_file(file_id_str, "wb", data)
         
     logger.info("Successfully updated local file from r2")
-    
 
 
 
+
+async def compile_project_pdf(ctx, project_id_str: str):
+    project_path = settings.TEMP_PROJECTS_PATH / project_id_str
+    main_latex_file_path = project_path / "main.tex"
+    if os.path.exists(main_latex_file_path):
+        url = compile_latex_with_latexmk(
+            main_latex_file_path,
+            f"compiled/{project_id_str}"
+        )
+        channel_name = get_project_channel_name(project_id_str)
+        await publish_to_channel(
+            channel_name,
+            Message(
+                scope=EventScope.PROJECT,
+                action=ProjectAction.UPDATE_COMPILED_PDF,
+                payload=url
+            ).model_dump_json()
+        )
 
 async def shutdown(ctx):
     await engine.dispose()
-
+            
         
 saq_settings = {
     "queue": background_tasks,
@@ -225,7 +249,8 @@ saq_settings = {
         perform_project_initialization,
         upload_crdt_snapshot_to_r2,
         update_local_file_from_cache,
-        update_cache_and_local_files_from_r2
+        update_cache_and_local_files_from_r2,
+        compile_project_pdf
     ],
     "shutdown": shutdown,
     "concurrency": 10,

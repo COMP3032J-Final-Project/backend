@@ -29,12 +29,8 @@ from app.repositories.user import UserDAO
 from .crdt_handler import crdt_handler
 
 
-def get_project_channel_name(project_id: Union[str, UUID]):
-    return f"project/{project_id}"
 
-
-def get_project_id(channel_name: str) -> str:
-    return channel_name.split("/")[-1]
+from app.core.aiocache import get_project_channel_name, get_project_id_from_channel_name # for exposure
 
 
 
@@ -68,7 +64,7 @@ class ProjectGeneralManager(GeneralPurposePubSubManager):
         if not recipient_client_ids:
             return
 
-        project_id_str = get_project_id(concrete_channel)
+        project_id_str = get_project_id_from_channel_name(concrete_channel)
 
         message_json = orjson.loads(message)
         client_id = message_json["client_id"]

@@ -11,15 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 
-from .compile import MyHandler
 from .config import settings
 from .db import engine
-
-observer: Observer | None = None
-
 
 async def startup_handler() -> None:
     """
@@ -34,16 +28,6 @@ async def startup_handler() -> None:
     async for db in get_db():
         await create_default_admin(db)
 
-    # Create observer and event handler
-    observer = Observer()
-    event_handler = MyHandler()
-    # Set up observer to watch a specific directory
-    directory_to_watch = settings.TEMP_PROJECTS_PATH
-    observer.schedule(event_handler, directory_to_watch, recursive=True)
-
-    # Start the observer
-    observer.start()
-
 
 async def shutdown_handler() -> None:
     """
@@ -51,10 +35,6 @@ async def shutdown_handler() -> None:
     """
     await project_general_manager.cleanup()
     await crdt_handler.cleanup()
-
-    if observer:
-        observer.stop()
-        observer.join()
 
     await engine.dispose()
 
