@@ -5,6 +5,7 @@ import os
 import asyncio
 import requests
 from app.core.config import settings
+from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 from app.models.project.file import FileCreateUpdate
 from app.models.project.project import (MemberCreateUpdate, ProjectCreate,
                                         ProjectPermission, ProjectType)
@@ -77,7 +78,7 @@ async def create_template_projects(db: AsyncSession) -> None:
                 else:
                     try:
                         doc = LoroDoc()
-                        text = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID)
+                        text = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID)
                         text.insert(0, data.decode())
                         doc.commit()
                         upload_content = doc.export(ExportMode.Snapshot())

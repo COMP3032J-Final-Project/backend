@@ -8,8 +8,9 @@ from loro import LoroDoc, ExportMode
 from base64 import b64decode
 # from fastapi import BackgroundTasks # only works inside FastAPI's request/response lifecycle
 
-from app.core.aiocache import cache as hivey_cache
+from app.core.aiocache import cache, get_cache_key_crdt, get_cache_key_crdt_upload_r2_debounce
 from app.core.background_tasks import background_tasks
+from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 
 
 class CrdtHandler:
@@ -20,19 +21,13 @@ class CrdtHandler:
         lorocrdt_text_container_id: str = "codemirror",
         temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
         r2_upload_debounce_ttl: float = 1.0,
-        cache: Any = None,
-        cache_namespace: str = "crdt",  # f"{cache_namespace}{file_id}"
     ):
-        if cache is None:
-            self.cache = hivey_cache
             
-        self.cache_namespace = cache_namespace
         self.lorocrdt_text_container_id = lorocrdt_text_container_id
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
         self.temp_directory_path = temp_directory_path
         self.r2_upload_debounce_ttl = r2_upload_debounce_ttl
-        self.r2_debounce_cache_namespace = "debounce_r2_upload"
         
         # --- State Management for R2 Uploads ---
         # file_id -> last upload time
@@ -44,13 +39,6 @@ class CrdtHandler:
         logger.info(f"Local file updates {'enabled' if should_update_local_files else 'disabled'}")
         logger.info(f"R2 uploads {'enabled' if self.should_upload_to_r2 else 'disabled'}")
 
-    def get_cache_key(self, file_id: str) -> str:
-        # NOTE that there is another namespace configured in `settings.cache`
-        return f"{self.cache_namespace}:{file_id}"
-
-    def get_r2_debounce_key(self, file_id: str) -> str:
-        return f"{self.r2_debounce_cache_namespace}:{file_id}"
-            
     async def cleanup(self):
         logger.info("Cleaning up CrdtHandler...")
         
@@ -77,8 +65,8 @@ class CrdtHandler:
 
     async def _get_doc_from_cache(self, file_id: str) -> LoroDoc:
         """Internal helper to get LoroDoc from cache snapshot."""
-        key = self.get_cache_key(file_id)
-        snapshot_bytes: Optional[bytes] = await self.cache.get(key)
+        key = get_cache_key_crdt(file_id)
+        snapshot_bytes: Optional[bytes] = await cache.get(key)
         
         doc = LoroDoc()
         
@@ -87,20 +75,20 @@ class CrdtHandler:
                 doc.import_(snapshot_bytes)
             except BaseException as e:
                 logger.error(f"Loro import error for cached snapshot {key}: {e}. Resetting doc.")
-                await self.cache.delete(key) # Remove corrupted data
+                await cache.delete(key) # Remove corrupted data
         
         return doc
 
     async def _set_doc_to_cache(self, file_id: str, doc: LoroDoc):
         """Internal helper to set LoroDoc snapshot to cache."""
-        key = self.get_cache_key(file_id)
+        key = get_cache_key_crdt(file_id)
         try:
             snapshot_bytes = doc.export(ExportMode.Snapshot())
         except BaseException as le:
              logger.error(f"Loro export error for doc {file_id} before caching: {le}")
              return
          
-        await self.cache.set(key, snapshot_bytes)
+        await cache.set(key, snapshot_bytes)
     
     async def get_doc(self, file_id: str) -> LoroDoc:
         doc = await self._get_doc_from_cache(file_id)
@@ -174,13 +162,13 @@ class CrdtHandler:
                 )
                 
             if self.should_upload_to_r2:
-                debounce_key = self.get_r2_debounce_key(file_id)
-                debounce_status = await self.cache.get(debounce_key)
+                debounce_key = get_cache_key_crdt_upload_r2_debounce(file_id)
+                debounce_status = await cache.get(debounce_key)
                 if debounce_status is None:
                     await background_tasks.enqueue(
                         "upload_crdt_snapshot_to_r2", file_id=file_id
                     )
-                    await self.cache.set(
+                    await cache.set(
                         debounce_key,
                         "debounce",
                         ttl=self.r2_upload_debounce_ttl
@@ -194,6 +182,6 @@ class CrdtHandler:
 
 
 crdt_handler = CrdtHandler(
-    lorocrdt_text_container_id=settings.LOROCRDT_TEXT_CONTAINER_ID,
+    lorocrdt_text_container_id=LOROCRDT_TEXT_CONTAINER_ID,
     should_upload_to_r2=True
 )

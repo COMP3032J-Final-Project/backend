@@ -14,7 +14,8 @@ from app.api.endpoints.project.crdt_handler import crdt_handler
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
-from app.core.aiocache import cache, get_cache_key_task_ppi
+from app.core.aiocache import cache, get_cache_key_task_ppi, get_cache_key_crdt
+from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 
 import uuid
 
@@ -78,7 +79,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
                         # For simplicity, using sync here, but consider aiofiles or asyncio.to_thread
                         target_path.write_bytes(fileobj_bytes)
                     else:
-                        text_content = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID).to_string()
+                        text_content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
                         # Use async file I/O if possible
                         target_path.write_text(text_content, encoding='utf-8')
 
@@ -112,18 +113,13 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 # --- crdt ----
 
 
-# NOTE make sure it matches crdt_handler's setting
-CRDT_CACHE_NAMESPACE = "crdt"
-def get_crdt_cache_key(file_id: str) -> str:
-    return f"{CRDT_CACHE_NAMESPACE}:{file_id}"
-
 async def upload_crdt_snapshot_to_r2(ctx, file_id: str):
     """
     SAQ task to upload the latest CRDT snapshot from cache to R2.
     """
     doc = LoroDoc()
     snapshot_bytes: bytes | None = None
-    cache_key = get_crdt_cache_key(file_id)
+    cache_key = get_cache_key_crdt(file_id)
     
     cached_data: Optional[bytes] = await cache.get(cache_key)
     if not cached_data:

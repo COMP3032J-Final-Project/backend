@@ -22,3 +22,10 @@ else:
 
 def get_cache_key_task_ppi(project_id: str | UUID):
     return f"task:perform_project_initialization:{project_id}/status"
+
+def get_cache_key_crdt(file_id: str | UUID):
+    return f"crdt:{file_id}"
+
+def get_cache_key_crdt_upload_r2_debounce(file_id: str | UUID):
+    return f"crdt/debounce_r2_upload:{file_id}"
+
