@@ -6,17 +6,17 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 
 - python >= 3.11
 - MySQL/MariaDB (生产环境要求，如果你仅仅是测试，则可以用 SQLite(无需安装))
-- Redis ([saq](https://github.com/tobymao/saq) doesn't support in-memory queue)
+- Redis
 
 ## 初始
 
 1. 根目录下创建 `.env` 文件，示例文件在 [.env.example](./.env.example)
    需要注意的是目前这三个环境变量都需要设置成使用 `redis`，因为后台任务是运行在独立进程里
-   的，传递信息需要用到 redis
+   的，传递信息需要用到 `redis`
    ```
    HIVEY_B_SAQ_URL=redis://localhost:6379
-   HIVEY_B_AIOCACHE_URL=memory://
-   HIVEY_B_PUB_SUB_BACKEND_URL=memory://
+   HIVEY_B_AIOCACHE_URL=redis://localhost:6379
+   HIVEY_B_PUB_SUB_BACKEND_URL=redis://localhost:6379
    ```
    
 2. 如果`USE_SQLITE`不是`true`你则需要在`MySQL/MariaDB`中创建和 `.env` 中的数据库名称对应的
