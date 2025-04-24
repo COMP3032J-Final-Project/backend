@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 from io import BytesIO
-from pathlib import PureWindowsPath
+from pathlib import PureWindowsPath, Path
 from typing import Optional
 
 import botocore
@@ -12,6 +12,7 @@ from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from app.core.background_tasks import background_tasks
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -91,30 +92,6 @@ class FileDAO:
         return file, response
 
     @staticmethod
-    async def confirm_file(file_id: uuid.UUID, db: AsyncSession):
-        """
-        文件上传后，通知后端检查文件状态
-        把文件从r2上面拉到本地临时目录
-
-        如果文件不存在，删库
-        """
-
-        file = await FileDAO.get_file_by_id(file_id, db=db)
-        if file:
-            if FileDAO.check_file_exist_in_r2(file=file):
-                try:
-                    local_path = FileDAO.get_temp_file_path(file=file)
-                    with open(local_path, "wb") as f:
-                        r2client.download_fileobj(settings.WRITER, local_path, f)
-
-                except botocore.exceptions.ClientError as error:
-                    logger.error(error)
-                    raise
-            else:
-                db.delete(file)
-                db.commit()
-
-    @staticmethod
     async def delete_file(file: File, db: AsyncSession) -> bool:
         """
         删除
@@ -192,15 +169,14 @@ class FileDAO:
             raise
 
         return target_file
-
+    
     @staticmethod
-    def get_temp_file_path(file: File) -> str:
+    def get_temp_file_path(file: File) -> Path:
         """
         各自平台对应的本地暂存文件夹路径
         """
-        return os.path.normpath(
-            os.path.join(settings.TEMP_PROJECT_PATH, str(file.project_id), file.filepath, file.filename)
-        )
+        return settings.TEMP_PROJECTS_PATH / str(file.project_id) / file.filepath / file.filename
+
 
     @staticmethod
     def get_remote_file_path(file_id: str | uuid.UUID) -> str:
@@ -256,12 +232,12 @@ class FileDAO:
         return response
 
     @staticmethod
-    async def check_file_exist_in_r2(file: File) -> bool:
+    async def check_file_exist_in_r2(file_id: uuid.UUID | str) -> bool:
         """
         检查文件对应的远程资源是否在R2中存在
         """
         try:
-            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file.id))
+            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file_id))
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "404":
                 return False

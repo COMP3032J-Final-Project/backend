@@ -18,6 +18,10 @@ from lib.utils import decode_base64url
 from loguru import logger
 from loro import ExportMode, LoroDoc, VersionVector
 from sqlmodel.ext.asyncio.session import AsyncSession
+from app.core.background_tasks import background_tasks
+from app.core.aiocache import (
+    cache, get_cache_key_new_file_lock
+)
 
 from .crdt_handler import crdt_handler
 
@@ -53,7 +57,7 @@ async def get_file_download_url(
     current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -88,7 +92,7 @@ async def get_file_crdt_missing_ops(
     # 检查文件是否存在于 R2
     current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
 
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -123,7 +127,7 @@ async def delete_file(
         raise HTTPException(status_code=403, detail="No permission to delete this file")
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -140,8 +144,6 @@ async def delete_file(
                     payload=[file_id],
                 ).model_dump_json(),
             )
-
-            await reset_cache_task_ppi(project_id)
             
             return APIResponse(code=200, msg="success")
 
@@ -235,28 +237,6 @@ async def create_update_file(
     return APIResponse(code=200, data=response_data, msg="success")
 
 
-@router.post("/confirm")
-async def confirm_file(
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    project_id: uuid.UUID = Path(...),
-    file_id: uuid.UUID = Path(...),
-):
-    """
-    创建File对象,并获取文件上传URL
-    """
-    current_project = await get_current_project(current_user, project_id, db)
-
-    # 检查用户权限
-    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
-    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
-    if not is_member or is_viewer:
-        raise HTTPException(status_code=403, detail="No permission to upload files")
-
-    await FileDAO.confirm_file(file_id=file_id, db=db)
-    return APIResponse(code=200, msg="success")
-
-
 @router.get("/{file_id:uuid}/exist", response_model=APIResponse[File])
 async def check_file_exist(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -276,8 +256,15 @@ async def check_file_exist(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if is_exists:
+        cache_key_new_file_lock = get_cache_key_new_file_lock(file_id)
+        await cache.set(cache_key_new_file_lock, 1)
+
+        await background_tasks.enqueue(
+            "update_cache_and_local_files_from_r2",
+            file_id_str=str(file_id)
+        )
 
         # 广播
         try:
@@ -295,6 +282,9 @@ async def check_file_exist(
             logger.error(f"Failed to broadcast file added: {str(e)}")
 
         return APIResponse(code=200, data=current_file, msg="File uploaded successfully")
+    else:
+        await db.delete(current_file)
+        await db.commit()
 
     raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -319,7 +309,7 @@ async def mv(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -367,7 +357,7 @@ async def cp(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file.id)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 

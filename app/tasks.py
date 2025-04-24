@@ -14,7 +14,9 @@ from app.api.endpoints.project.crdt_handler import crdt_handler
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
-from app.core.aiocache import cache, get_cache_key_task_ppi, get_cache_key_crdt
+from app.core.aiocache import (
+    cache, get_cache_key_task_ppi, get_cache_key_crdt, get_cache_key_new_file_lock
+)
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 import os
 
@@ -108,38 +110,55 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 
         await cache.set(task_cache_key, "failed");
 
-
-
-
 # --- crdt ----
 
 
-async def upload_crdt_snapshot_to_r2(ctx, file_id: str):
+async def upload_crdt_snapshot_to_r2(ctx, file_id_str: str):
     """
     SAQ task to upload the latest CRDT snapshot from cache to R2.
     """
-    cache_key = get_cache_key_crdt(file_id)
+    cache_key = get_cache_key_crdt(file_id_str)
     
     snapshot_bytes: Optional[bytes] = await cache.get(cache_key)
     if not snapshot_bytes:
-        logger.warning(f"No CRDT data found in cache for {file_id} during R2 upload task. Skipping.")
+        logger.warning(f"No CRDT data found in cache for {file_id_str} during R2 upload task. Skipping.")
         return {"status": "skipped", "reason": "no data in cache"}
     
     try:
-        await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id)
-        logger.info(f"Successfully uploaded snapshot to R2 via SAQ task for file_id: {file_id}")
+        await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id_str)
+        logger.info(f"Successfully uploaded snapshot to R2 via SAQ task for file_id: {file_id_str}")
         return {"status": "success"}
     except Exception as e:
-        logger.error(f"Error during R2 upload execution in SAQ task for {file_id}: {e}")
+        logger.error(f"Error during R2 upload execution in SAQ task for {file_id_str}: {e}")
         raise
 
 
-def write_file_sync(file_path: str | Path, content: str):
-    with open(file_path, "w", encoding="utf-8") as f:
+def write_file_sync(file_path: str | Path, mode: str, content: str | bytes):
+    with open(file_path, mode) as f:
         f.write(content)
 
+async def write_to_file(file_id_str: str, mode: str, content: str | bytes):
+    file_id = uuid.UUID(file_id_str)
+    async with async_session() as db:
+        file = await FileDAO.get_file_by_id(file_id, db)
+        if file is None:
+            logger.error(f"file {file_id_str} doesn't exist in database")
+            return
+        
+    target_file_path = FileDAO.get_temp_file_path(file)
+    target_dir = target_file_path.parent
+    
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        await asyncio.to_thread(write_file_sync, target_file_path, mode, content)
+        logger.info(f"Successfully updated local file {target_file_path}")
+    except OSError as e:
+        logger.error(f"OS error writing local file {target_file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
-async def update_local_project_file(ctx, project_id_str: str, file_id_str: str):
+
+async def update_local_file_from_cache(ctx, file_id_str: str):
     cache_key = get_cache_key_crdt(file_id_str)
     snapshot_bytes: Optional[bytes] = await cache.get(cache_key)
     if not snapshot_bytes:
@@ -152,31 +171,47 @@ async def update_local_project_file(ctx, project_id_str: str, file_id_str: str):
     doc = LoroDoc()
     try:
         doc.import_(snapshot_bytes)
-        text_content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
+        content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
     except BaseException:
         logger.error("Get text content error")
         return
 
-    file_id = uuid.UUID(file_id_str)
-    async with async_session() as db:
-        file = await FileDAO.get_file_by_id(file_id, db)
-        if file is None:
-            logger.error(f"file {file_id_str} doesn't exist in database")
-            return
+    await write_to_file(file_id_str, "w", content)
+
+
         
-    filepath = file.filepath
-    filename = file.filename
-    target_file_path = settings.TEMP_PROJECTS_PATH / project_id_str / filepath / filename
-    target_dir = target_file_path.parent
+async def update_cache_and_local_files_from_r2(ctx, file_id_str: str):
+    data = FileDAO.get_r2_file_data(file_id_str)
     
+    crdt_export = None
+    
+    doc = LoroDoc()
     try:
-        os.makedirs(target_dir, exist_ok=True)
-        await asyncio.to_thread(write_file_sync, target_file_path, text_content)
-        logger.info(f"Successfully updated local file {target_file_path}")
-    except OSError as e:
-        logger.error(f"OS error writing local file {target_file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
+        doc.import_(data)
+        crdt_export = doc.export(ExportMode.Snapshot())
+    except BaseException:
+        pass
+
+    # update cache
+    if crdt_export:
+        cache_key = get_cache_key_crdt(file_id_str)
+        await cache.set(cache_key, crdt_export)
+        
+        cache_key_new_file_lock = get_cache_key_new_file_lock(file_id_str)
+        await cache.delete(cache_key_new_file_lock)
+
+        logger.info("Successfully updated cache from r2")
+
+    # update local file
+    if crdt_export:
+        content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
+        await write_to_file(file_id_str, "w", content)
+    else:
+        await write_to_file(file_id_str, "wb", data)
+        
+    logger.info("Successfully updated local file from r2")
+    
+
 
 
 
@@ -189,7 +224,8 @@ saq_settings = {
     "functions": [
         perform_project_initialization,
         upload_crdt_snapshot_to_r2,
-        update_local_project_file
+        update_local_file_from_cache,
+        update_cache_and_local_files_from_r2
     ],
     "shutdown": shutdown,
     "concurrency": 10,

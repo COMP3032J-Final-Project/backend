@@ -20,16 +20,21 @@ if url.startswith("redis://"):
 else:
     raise Exception("Invalid settings.AIOCACHE_URL")
 
+
 def get_cache_key_task_ppi(project_id: str | UUID):
     return f"task:perform_project_initialization:{project_id}/status"
 
 def get_cache_key_crdt(file_id: str | UUID):
     return f"crdt:{file_id}"
 
+def get_cache_key_new_file_lock(file_id: str | UUID):
+    return f"crdt/new_file:{file_id}"
+
 def get_cache_key_crdt_upload_r2_debounce(file_id: str | UUID):
     return f"crdt/debounce_r2_upload:{file_id}"
 
 def get_cache_key_crdt_write_local_file_debounce(file_id: str | UUID):
     return f"crdt/debounce_write_local_file:{file_id}"
+
     
 

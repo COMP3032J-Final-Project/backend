@@ -10,7 +10,8 @@ from base64 import b64decode
 
 from app.core.aiocache import (
     cache, get_cache_key_crdt, get_cache_key_crdt_upload_r2_debounce,
-    get_cache_key_crdt_write_local_file_debounce
+    get_cache_key_crdt_write_local_file_debounce,
+    get_cache_key_new_file_lock
 )
 from app.core.background_tasks import background_tasks
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
@@ -132,8 +133,7 @@ class CrdtHandler:
                 debounce_status = await cache.get(debounce_key)
                 if debounce_status is None:
                     await background_tasks.enqueue(
-                        "update_local_project_file",
-                        project_id_str=project_id,
+                        "update_local_file_from_cache",
                         file_id_str=file_id
                     )
                     await cache.set(
@@ -143,11 +143,15 @@ class CrdtHandler:
                     )
                 
             if self.should_upload_to_r2:
+                new_file_lock_key = get_cache_key_new_file_lock(file_id)
+                if await cache.get(new_file_lock_key) is not None:
+                    return
+                
                 debounce_key = get_cache_key_crdt_upload_r2_debounce(file_id)
                 debounce_status = await cache.get(debounce_key)
                 if debounce_status is None:
                     await background_tasks.enqueue(
-                        "upload_crdt_snapshot_to_r2", file_id=file_id
+                        "upload_crdt_snapshot_to_r2", file_id_str=file_id
                     )
                     await cache.set(
                         debounce_key,
