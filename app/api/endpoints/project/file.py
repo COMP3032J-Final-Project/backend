@@ -1,21 +1,25 @@
 import uuid
+from base64 import b64encode
 from typing import Annotated
 
-from app.api.deps import get_current_project_file, get_current_project, get_current_user, get_db
-from app.api.endpoints.project.websocket_handlers import get_project_channel_name, project_general_manager
+from app.api.deps import (get_current_project, get_current_project_file,
+                          get_current_user, get_db)
+from app.api.endpoints.project.websocket_handlers import (
+    get_project_channel_name, project_general_manager)
 from app.models.base import APIResponse
-from app.models.project.file import File, FileCreateUpdate, FileUploadResponse, FileURL, FilesDelete
+from app.models.project.file import (File, FileCreateUpdate, FilesDelete,
+                                     FileUploadResponse, FileURL)
 from app.models.project.websocket import EventScope, FileAction, Message
 from app.models.user import User
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from fastapi import APIRouter, Depends, HTTPException, Path
-from sqlmodel.ext.asyncio.session import AsyncSession
-from loro import ExportMode, VersionVector, LoroDoc
-from base64 import b64encode
 from lib.utils import decode_base64url
-from .crdt_handler import crdt_handler
 from loguru import logger
+from loro import ExportMode, LoroDoc, VersionVector
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from .crdt_handler import crdt_handler
 
 router = APIRouter()
 
@@ -83,7 +87,7 @@ async def get_file_crdt_missing_ops(
 ):
     # 检查文件是否存在于 R2
     current_project, current_file = await get_current_project_file(current_user, project_id, file_id, db)
-    
+
     is_exists = await FileDAO.check_file_exist_in_r2(current_file)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
@@ -224,6 +228,28 @@ async def create_update_file(
     file, url = await FileDAO.create_update_file(file_create_update=file_create_update, project=current_project, db=db)
     response_data = FileUploadResponse(file_id=file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
+
+
+@router.post("/confirm")
+async def confirm_file(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    project_id: uuid.UUID = Path(...),
+    file_id: uuid.UUID = Path(...),
+):
+    """
+    创建File对象,并获取文件上传URL
+    """
+    current_project = await get_current_project(current_user, project_id, db)
+
+    # 检查用户权限
+    is_member = await ProjectDAO.is_project_member(current_project, current_user, db)
+    is_viewer = await ProjectDAO.is_project_viewer(current_project, current_user, db)
+    if not is_member or is_viewer:
+        raise HTTPException(status_code=403, detail="No permission to upload files")
+
+    await FileDAO.confirm_file(file_id=file_id, db=db)
+    return APIResponse(code=200, msg="success")
 
 
 @router.get("/{file_id:uuid}/exist", response_model=APIResponse[File])

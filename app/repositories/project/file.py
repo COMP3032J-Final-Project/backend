@@ -76,7 +76,6 @@ class FileDAO:
         """
         文件存在->改
         """
-
         response = ""
         try:
             response = r2client.generate_presigned_url(
@@ -84,11 +83,36 @@ class FileDAO:
                 Params={"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file.id)},
                 ExpiresIn=expiration,
             )
+
         except botocore.exceptions.ClientError as error:
             logger.error(error)
             raise
 
         return file, response
+
+    @staticmethod
+    async def confirm_file(file_id: uuid.UUID, db: AsyncSession):
+        """
+        文件上传后，通知后端检查文件状态
+        把文件从r2上面拉到本地临时目录
+
+        如果文件不存在，删库
+        """
+
+        file = await FileDAO.get_file_by_id(file_id, db=db)
+        if file:
+            if FileDAO.check_file_exist_in_r2(file=file):
+                try:
+                    local_path = FileDAO.get_temp_file_path(file=file)
+                    with open(local_path, "wb") as f:
+                        r2client.download_fileobj(settings.WRITER, local_path, f)
+
+                except botocore.exceptions.ClientError as error:
+                    logger.error(error)
+                    raise
+            else:
+                db.delete(file)
+                db.commit()
 
     @staticmethod
     async def delete_file(file: File, db: AsyncSession) -> bool:
@@ -174,7 +198,9 @@ class FileDAO:
         """
         各自平台对应的本地暂存文件夹路径
         """
-        return os.path.normpath(os.path.join(settings.TEMP_PATH, file.filepath, file.filename))
+        return os.path.normpath(
+            os.path.join(settings.TEMP_PROJECT_PATH, str(file.project_id), file.filepath, file.filename)
+        )
 
     @staticmethod
     def get_remote_file_path(file_id: str | uuid.UUID) -> str:
