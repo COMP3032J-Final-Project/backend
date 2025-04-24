@@ -14,7 +14,7 @@ from app.api.endpoints.project.crdt_handler import crdt_handler
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
-from app.core.aiocache import cache
+from app.core.aiocache import cache, get_cache_key_task_ppi
 
 import uuid
 
@@ -29,7 +29,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 
     # use cache to prevent duplicated initialization
 
-    task_cache_key = f"task:perform_project_initialization:{project_id}/status"
+    task_cache_key = get_cache_key_task_ppi(project_id_str)
     task_status = await cache.get(task_cache_key)
 
     if task_status in (b"success", "success"):

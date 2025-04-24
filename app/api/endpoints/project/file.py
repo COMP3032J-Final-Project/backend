@@ -99,6 +99,7 @@ async def get_file_crdt_missing_ops(
     return APIResponse(code=200, data=updates, msg="success")
 
 
+# TODO duplicated with `delete_files` route
 @router.delete("/{file_id:uuid}", response_model=APIResponse)
 async def delete_file(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -135,6 +136,9 @@ async def delete_file(
                     payload=[file_id],
                 ).model_dump_json(),
             )
+
+            await reset_cache_task_ppi(project_id)
+            
             return APIResponse(code=200, msg="success")
 
     except Exception as e:
@@ -200,6 +204,7 @@ async def delete_files(
     except Exception as e:
         logger.error(f"Failed to broadcast file deletion: {str(e)}")
 
+    
     return APIResponse(code=200, msg="success")
 
 
