@@ -58,8 +58,6 @@ class Settings(BaseSettings):
     R2_SECRET: str = os.getenv("HIVEY_B_R2_SECRET", "")
     R2_BUCKET: str = os.getenv("HIVEY_B_R2_BUCKET", "hivey-files")
 
-    LOROCRDT_TEXT_CONTAINER_ID: str = os.getenv("LOROCRDT_TEXT_CONTAINER_ID", "codemirror")
-
     TEMP_PATH: Path = Path(os.path.normpath(os.getenv("HIVEY_B_TEMP_PATH", "./temp")))
 
     TEMP_PROJECTS_PATH: Path = TEMP_PATH / "projects"

@@ -30,7 +30,7 @@ from .websocket_handlers import project_general_manager, get_project_channel_nam
 from loro import LoroDoc
 from lib.utils import is_likely_binary
 from app.core.config import settings
-from app.core.aiocache import cache
+from app.core.aiocache import cache, get_cache_key_task_ppi
 from app.api.endpoints.project.crdt_handler import crdt_handler
 from app.core.background_tasks import background_tasks
 
@@ -251,7 +251,7 @@ async def get_project_initialization_status(
     # called frequently and checking permission isn't important here
 
     # NOTE should be the same as perform_project_initialization task
-    task_cache_key = f"task:perform_project_initialization:{project_id}/status"
+    task_cache_key = get_cache_key_task_ppi(project_id)
     result = await cache.get(task_cache_key)
     result = result.decode() if isinstance(result, bytes) else result
     # nil, "success", "failed"
@@ -361,6 +361,7 @@ async def delete_projects(
     return APIResponse(code=200, msg="Projects deleted")
 
 
+# TODO delete this route, since it's duplicated with delete_projects route
 @router.delete("/{project_id:uuid}", response_model=APIResponse)
 async def delete_project(
     current_user: Annotated[User, Depends(get_current_user)],

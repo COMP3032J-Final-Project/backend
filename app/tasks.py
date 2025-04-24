@@ -1,12 +1,12 @@
 # app/tasks.py (or similar location)
 import uuid
 from loguru import logger
-from loro import LoroDoc
+from loro import ExportMode, LoroDoc
 import asyncio
 from typing import Optional
-
+from pathlib import Path
 from app.core.config import settings
-from app.core.db import async_session
+from app.core.db import async_session, engine
 from app.repositories.user import UserDAO
 from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
@@ -14,7 +14,9 @@ from app.api.endpoints.project.crdt_handler import crdt_handler
 
 from app.core.config import settings
 from app.core.background_tasks import background_tasks
-from app.core.aiocache import cache
+from app.core.aiocache import cache, get_cache_key_task_ppi, get_cache_key_crdt
+from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
+import os
 
 import uuid
 
@@ -29,7 +31,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 
     # use cache to prevent duplicated initialization
 
-    task_cache_key = f"task:perform_project_initialization:{project_id}/status"
+    task_cache_key = get_cache_key_task_ppi(project_id_str)
     task_status = await cache.get(task_cache_key)
 
     if task_status in (b"success", "success"):
@@ -78,7 +80,7 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
                         # For simplicity, using sync here, but consider aiofiles or asyncio.to_thread
                         target_path.write_bytes(fileobj_bytes)
                     else:
-                        text_content = doc.get_text(settings.LOROCRDT_TEXT_CONTAINER_ID).to_string()
+                        text_content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
                         # Use async file I/O if possible
                         target_path.write_text(text_content, encoding='utf-8')
 
@@ -112,25 +114,16 @@ async def perform_project_initialization(ctx, project_id_str: str, user_id_str: 
 # --- crdt ----
 
 
-# NOTE make sure it matches crdt_handler's setting
-CRDT_CACHE_NAMESPACE = "crdt"
-def get_crdt_cache_key(file_id: str) -> str:
-    return f"{CRDT_CACHE_NAMESPACE}:{file_id}"
-
 async def upload_crdt_snapshot_to_r2(ctx, file_id: str):
     """
     SAQ task to upload the latest CRDT snapshot from cache to R2.
     """
-    doc = LoroDoc()
-    snapshot_bytes: bytes | None = None
-    cache_key = get_crdt_cache_key(file_id)
+    cache_key = get_cache_key_crdt(file_id)
     
-    cached_data: Optional[bytes] = await cache.get(cache_key)
-    if not cached_data:
+    snapshot_bytes: Optional[bytes] = await cache.get(cache_key)
+    if not snapshot_bytes:
         logger.warning(f"No CRDT data found in cache for {file_id} during R2 upload task. Skipping.")
         return {"status": "skipped", "reason": "no data in cache"}
-    
-    snapshot_bytes = cached_data
     
     try:
         await asyncio.to_thread(FileDAO.update_r2_file, snapshot_bytes, file_id)
@@ -141,18 +134,63 @@ async def upload_crdt_snapshot_to_r2(ctx, file_id: str):
         raise
 
 
+def write_file_sync(file_path: str | Path, content: str):
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+async def update_local_project_file(ctx, project_id_str: str, file_id_str: str):
+    cache_key = get_cache_key_crdt(file_id_str)
+    snapshot_bytes: Optional[bytes] = await cache.get(cache_key)
+    if not snapshot_bytes:
+        logger.warning(
+            f"No CRDT data found in cache for {file_id_str} during R2 upload"
+            "task. Skipping."
+        )
+        return
+
+    doc = LoroDoc()
+    try:
+        doc.import_(snapshot_bytes)
+        text_content = doc.get_text(LOROCRDT_TEXT_CONTAINER_ID).to_string()
+    except BaseException:
+        logger.error("Get text content error")
+        return
+
+    file_id = uuid.UUID(file_id_str)
+    async with async_session() as db:
+        file = await FileDAO.get_file_by_id(file_id, db)
+        if file is None:
+            logger.error(f"file {file_id_str} doesn't exist in database")
+            return
+        
+    filepath = file.filepath
+    filename = file.filename
+    target_file_path = settings.TEMP_PROJECTS_PATH / project_id_str / filepath / filename
+    target_dir = target_file_path.parent
+    
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        await asyncio.to_thread(write_file_sync, target_file_path, text_content)
+        logger.info(f"Successfully updated local file {target_file_path}")
+    except OSError as e:
+        logger.error(f"OS error writing local file {target_file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
 
 
-
-
+async def shutdown(ctx):
+    await engine.dispose()
 
         
 saq_settings = {
     "queue": background_tasks,
     "functions": [
         perform_project_initialization,
-        upload_crdt_snapshot_to_r2
+        upload_crdt_snapshot_to_r2,
+        update_local_project_file
     ],
+    "shutdown": shutdown,
     "concurrency": 10,
 }
