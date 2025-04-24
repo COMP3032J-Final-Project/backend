@@ -1,14 +1,17 @@
 # User 相关的 API 路由
+import mimetypes
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user, get_target_user
 from app.core.security import verify_password, get_password_hash
 from app.models.base import APIResponse
-from app.models.user import User, UserUpdateAvatar, UserVerifyPwd, UserUpdatePwd
+from app.models.user import User, UserVerifyPwd, UserUpdatePwd
 from app.models.user import UserInfo, UserRegister, UserUpdate
+from app.repositories.project.file import FileDAO
 from app.repositories.project.project import ProjectDAO
 from app.repositories.user import UserDAO
 
@@ -75,7 +78,7 @@ async def delete_user(
     # await db.delete(current_user)
     # await db.commit()
     # 检查用户是否有项目
-    projects = await ProjectDAO.get_all_projects(current_user, db)
+    projects = await ProjectDAO.get_projects(current_user, db)
     if projects:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User has projects, cannot be deleted")
 
@@ -122,26 +125,47 @@ async def get_user(
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
 
 
-@router.get("/avatar/", response_model=APIResponse)
+# @router.post("/avatar", response_model=APIResponse)
+# async def upload_avatar(
+#     current_user: Annotated[User, Depends(get_current_user)],
+#     db: Annotated[AsyncSession, Depends(get_db)],
+#     # avatar: Annotated[UploadFile, Depends(get_image_file)],
+# ) -> APIResponse:
+#     """
+#     上传用户头像
+#     """
+    # avatar_extension = os.path.splitext(avatar.filename)[1] if avatar.filename else ".jpg"
+    # avatar_filename = f"avatars/{current_user.id}{avatar_extension}"
+    # contents = await avatar.read()
+    # await FileDAO.upload_file_to_r2(avatar_filename, contents, avatar.content_type)
+
+    # # 保存头像文件名
+    # updated_user = await UserDAO.update_user(current_user, UserUpdate(avatar_filename=avatar_filename), db)
+    # if updated_user is None:
+    #     raise HTTPException(status_code=400, detail="Failed to update user avatar")
+    # return APIResponse(code=200, msg="Avatar uploaded")
+
+
+@router.get("/avatar/{username:str}", response_model=None)
 async def get_avatar(
+    target_user: Annotated[User, Depends(get_target_user)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> APIResponse:
+):
     """
     获取用户头像
     """
-    avatar_url = await UserDAO.get_avatar_url(current_user)
-    return APIResponse(code=200, data=avatar_url, msg="success")
+    if not target_user.avatar_filename:
+        raise HTTPException(status_code=404, detail="Avatar not found")
 
+    try:
+        buffer = await FileDAO.pull_file_by_filename(target_user.avatar_filename)
 
-@router.put("/avatar/", response_model=APIResponse)
-async def update_avatar(
-    user_update_avatar: UserUpdateAvatar,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> APIResponse:
-    """
-    更新用户头像
-    """
-    is_default = user_update_avatar.is_default
+        # 获取文件的 MIME 类型 (eg. image/png)
+        content_type, _ = mimetypes.guess_type(target_user.avatar_filename)
+        print(f"Content type: {content_type}")
+        if content_type is None:
+            content_type = "application/octet-stream"
 
-    avatar_url = await UserDAO.update_avatar(current_user, is_default)
-    return APIResponse(code=200, data=avatar_url, msg="success")
+        return StreamingResponse(buffer, media_type=content_type)
+    except Exception as e:
+        return APIResponse(code=500, msg=f"Failed to retrieve avatar: {str(e)}")

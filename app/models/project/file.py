@@ -30,7 +30,7 @@ class File(BaseDB, table=True):
     文件表单
     """
 
-    __tablename__ = "file"
+    __tablename__ = "files"
     project_id: uuid.UUID = Field(..., foreign_key="projects.id", sa_column_kwargs={"nullable": False, "index": True})
     project: "Project" = Relationship(back_populates="files")
     filename: str = Field(..., max_length=255, sa_column_kwargs={"nullable": False, "index": True})

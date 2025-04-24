@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Optional, Self
 
 from loguru import logger
 from pydantic import EmailStr, model_validator
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlmodel import Field, Relationship
 
 from app.models.base import Base, BaseDB
+
+from app.models.project.websocket import FileAction, ProjectAction
 
 if TYPE_CHECKING:
     from app.models.project.file import File
@@ -65,8 +67,11 @@ class Project(BaseDB, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
-
     files: list["File"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
+    )
+    histories: list["ProjectHistory"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
     )
@@ -115,6 +120,49 @@ class ProjectUser(BaseDB, table=True):
 
     project: "Project" = Relationship(back_populates="users")
     user: "User" = Relationship(back_populates="projects")
+
+
+class ProjectHistory(BaseDB, table=True):
+    """
+    项目历史记录模型
+    """
+
+    __tablename__ = "project_histories"
+
+    action: str = Field(
+        ...,
+        sa_column_kwargs={"nullable": False},
+    )
+    project_id: uuid.UUID = Field(
+        ...,
+        foreign_key="projects.id",
+        sa_column_kwargs={"nullable": False, "index": True},
+    )
+    user_id: uuid.UUID = Field(
+        ...,
+        foreign_key="users.id",
+        sa_column_kwargs={"nullable": False, "index": True},
+    )
+    file_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=ForeignKey("file.id", ondelete="SET NULL", nullable=True, index=True),
+    )
+    state_before: str | None = Field(
+        default=None,
+        sa_column_kwargs={"nullable": True},
+    )
+    state_after: str | None = Field(
+        default=None,
+        sa_column_kwargs={"nullable": True},
+    )
+
+    project: "Project" = Relationship(back_populates="histories")
+
+    @model_validator(mode="after")
+    def validate_action(self) -> Self:
+        if self.action not in FileAction.values and self.action not in ProjectAction.values:
+            raise ValueError(f"Invalid action: {self.action}")
+        return self
 
 
 class ProjectCreate(Base):
@@ -174,6 +222,7 @@ class MemberInfo(Base):
     permission: Optional[ProjectPermission] = Field(default=None)
     avatar_url: Optional[str] = Field(default=None)
 
+
 class MemberCreateUpdate(Base):
     permission: ProjectPermission | None = Field(default=None)
     is_favorite: bool | None = Field(default=None)
@@ -181,3 +230,13 @@ class MemberCreateUpdate(Base):
 
 class ProjectPermissionData(Base):
     permission: ProjectPermission = Field(..., description="The permission of the member")
+
+
+class ProjectHistoryInfo(Base):
+    action: ProjectAction | FileAction = Field(...)
+    project_id: uuid.UUID = Field(...)
+    user_id: uuid.UUID = Field(...)
+    file_id: uuid.UUID | None = Field(default=None)
+    state_before: dict | None = Field(default=None)
+    state_after: dict | None = Field(default=None)
+    timestamp: datetime = Field(default_factory=datetime.now)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import uuid
@@ -6,6 +7,7 @@ from pathlib import PureWindowsPath, Path
 from typing import Optional
 
 import botocore
+import orjson
 from app.core.config import settings
 from app.core.r2client import r2client
 from app.models.project.file import File, FileCreateUpdate
@@ -13,6 +15,10 @@ from app.models.project.project import Project
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from app.core.background_tasks import background_tasks
+
+from app.models.project.websocket import FileAction
+
+from app.repositories.project.project import ProjectDAO
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -73,10 +79,10 @@ class FileDAO:
             db.add(file)
             await db.commit()
             await db.refresh(file)
-
         """
         文件存在->改
         """
+
         response = ""
         try:
             response = r2client.generate_presigned_url(
@@ -84,7 +90,6 @@ class FileDAO:
                 Params={"Bucket": settings.R2_BUCKET, "Key": FileDAO.get_remote_file_path(file.id)},
                 ExpiresIn=expiration,
             )
-
         except botocore.exceptions.ClientError as error:
             logger.error(error)
             raise
@@ -98,16 +103,35 @@ class FileDAO:
         """
         try:
             r2client.delete_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file))
+
         except botocore.exceptions.ClientError as error:
             logger.error(f"{error}")
             raise
 
+        # 添加历史记录
+        owner = await ProjectDAO.get_project_owner(file.project, db)
+        state_before = {
+            "filename": file.filename,
+            "filepath": file.filepath,
+        }
+        await ProjectDAO.add_project_history(
+            action=FileAction.DELETED,
+            project=file.project,
+            user=owner,
+            db=db,
+            file=file,
+            state_before=orjson.dumps(state_before),
+        )
+
         await db.delete(file)
         await db.commit()
+
         return True
 
     @staticmethod
-    async def move_file(file: File, file_create_update: FileCreateUpdate, db: AsyncSession) -> File:
+    async def move_file(
+        file_action: FileAction, file: File, file_create_update: FileCreateUpdate, db: AsyncSession
+    ) -> File:
         """
         移动/重命名现有文件（参考Linux mv）
 
@@ -121,10 +145,34 @@ class FileDAO:
             数据库
         """
         try:
-            file.filename = file_create_update.filename if file_create_update.filename else file.filename
-            file.filepath = file_create_update.filepath if file_create_update.filepath else file.filepath
+            state_before = {
+                "filename": file.filename,
+                "filepath": file.filepath,
+            }
 
+            new_filename = file_create_update.filename if file_create_update.filename else file.filename
+            new_filepath = file_create_update.filepath if file_create_update.filepath else file.filepath
+
+            file.filename = new_filename
+            file.filepath = new_filepath
             db.add(file)
+
+            owner = await ProjectDAO.get_project_owner(file.project, db)
+            state_after = {
+                "filename": new_filename,
+                "filepath": new_filepath,
+            }
+            await ProjectDAO.add_project_history(
+                action=file_action,
+                project=file.project,
+                user=owner,
+                db=db,
+                file=file,
+                state_before=orjson.dumps(state_before),
+                state_after=orjson.dumps(state_after),
+                commit=False,
+            )
+
             await db.commit()
             await db.refresh(file)
             return file
@@ -164,11 +212,42 @@ class FileDAO:
                 Bucket=settings.R2_BUCKET,
                 Key=FileDAO.get_remote_file_path(target_file.id),
             )
+            await FileDAO.check_file_exist_in_r2(target_file, db)
         except botocore.exceptions.ClientError as error:
             logger.error(error)
             raise
 
         return target_file
+
+    @staticmethod
+    async def copy_project(
+        template_project: Project,
+        new_project: Project,
+        db: AsyncSession,
+    ) -> None:
+        """
+        复制模板项目的文件到新项目
+        """
+        template_files = await ProjectDAO.get_files(template_project)
+
+        # 复制文件
+        for template_file in template_files:
+            is_exist = await FileDAO.check_file_exist_in_r2(template_file, db)
+            if not is_exist:
+                logger.warning(f"File {template_file.filename} does not exist in R2, skipping copy.")
+                continue
+
+            new_file = await FileDAO.copy_file(
+                source_file=template_file,
+                target_project=new_project,
+                target_file_create_update=FileCreateUpdate(
+                    filename=template_file.filename,
+                    filepath=template_file.filepath,
+                ),
+                db=db,
+            )
+            logger.info(f"Copied file {template_file.filename} to {new_file.filename}")
+
     
     @staticmethod
     def get_temp_file_path(file: File) -> Path:
@@ -232,19 +311,43 @@ class FileDAO:
         return response
 
     @staticmethod
-    async def check_file_exist_in_r2(file_id: uuid.UUID | str) -> bool:
+    async def check_file_exist_in_r2(file: File, db: AsyncSession) -> bool:
         """
         检查文件对应的远程资源是否在R2中存在
         """
         try:
-            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file_id))
+            r2client.head_object(Bucket=settings.R2_BUCKET, Key=FileDAO.get_remote_file_path(file.id))
+            logger.info(f"File {file.id} exists in R2")
+
+            # 检查历史记录
+            has_history = await ProjectDAO.has_file_history(file, db)
+            if not has_history:
+                logger.info(f"File {file.id} has no history, adding history")
+
+                project = await ProjectDAO.get_project_by_id(file.project_id, db)
+                owner = await ProjectDAO.get_project_owner(project, db)
+                state_after = {
+                    "filename": file.filename,
+                    "filepath": file.filepath,
+                }
+                await ProjectDAO.add_project_history(
+                    action=FileAction.ADDED,
+                    project=project,
+                    user=owner,
+                    db=db,
+                    file=file,
+                    state_after=orjson.dumps(state_after),
+                    commit=True,
+                )
+            return True
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "404":
+                logger.info(f"File {file.id} not found in R2")
+                await db.delete(file)
+                await db.commit()
                 return False
-            logger.error(error)
+            logger.error("Check file exist in r2 error", error)
             raise
-        else:
-            return True
 
     @staticmethod
     def update_r2_file(content: bytes, file_id: str | uuid.UUID) -> None:

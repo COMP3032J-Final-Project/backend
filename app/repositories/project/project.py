@@ -1,22 +1,24 @@
 import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+import orjson
 
 from loguru import logger
 
-from app.models.project.file import File, FileCreateUpdate
+from app.models.project.file import File
 from app.models.project.project import (
     MemberCreateUpdate,
     OwnerInfo,
     Project,
     ProjectCreate,
+    ProjectHistory,
     ProjectInfo,
     ProjectPermission,
     ProjectUpdate,
     ProjectUser,
     ProjectType,
 )
+from app.models.project.websocket import FileAction, ProjectAction
 from app.models.user import User
-from app.repositories.project.file import FileDAO
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -138,8 +140,12 @@ class ProjectDAO:
         return project
 
     @staticmethod
-    async def update_project(project: Project, project_update: ProjectUpdate, db: AsyncSession) -> Optional[Project]:
+    async def update_project(
+        project: Project, project_update: ProjectUpdate, user: User, db: AsyncSession
+    ) -> Optional[Project]:
         update_data = project_update.model_dump(exclude_unset=True, exclude_none=True)
+        state_before = {}
+        state_after = {}
 
         # 对于Project类型的项目，强制保持is_public为False
         if "is_public" in update_data and project.type == ProjectType.PROJECT and update_data["is_public"] is True:
@@ -147,14 +153,28 @@ class ProjectDAO:
             update_data["is_public"] = False
 
         for field in update_data:
+            state_before[field] = getattr(project, field)
             setattr(project, field, update_data[field])
+            state_after[field] = update_data[field]
+
         try:
+            # 添加历史记录
+            await ProjectDAO.add_project_history(
+                action=ProjectAction.UPDATE_NAME,
+                project=project,
+                user=user,
+                db=db,
+                state_before=orjson.dumps(state_before),
+                state_after=orjson.dumps(state_after),
+                commit=False,
+            )
+
             await db.commit()
+            await db.refresh(project)
+            return project
         except IntegrityError:
             await db.rollback()
             return None
-        await db.refresh(project)
-        return project
 
     @staticmethod
     async def delete_project(project: Project, db: AsyncSession) -> None:
@@ -343,30 +363,44 @@ class ProjectDAO:
         return project_files
 
     @staticmethod
-    async def copy_project(
-        template_project: Project,
-        new_project: Project,
+    async def has_file_history(file: File, db: AsyncSession) -> bool:
+        query = select(ProjectHistory).where(ProjectHistory.file_id == file.id).limit(1)
+        result = await db.execute(query)
+        return result.scalar_one_or_none() is not None
+
+    @staticmethod
+    async def get_project_history(project: Project, db: AsyncSession) -> list[ProjectHistory]:
+        query = (
+            select(ProjectHistory)
+            .where(ProjectHistory.project_id == project.id)
+            .order_by(ProjectHistory.created_at.desc())
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def add_project_history(
+        action: ProjectAction | FileAction,
+        project: Project,
+        user: User,
         db: AsyncSession,
+        file: File | None = None,
+        state_before: str | None = None,
+        state_after: str | None = None,
+        commit: bool = True,
     ) -> None:
         """
-        复制模板项目的文件到新项目
+        添加项目或文件操作的历史记录
         """
-        template_files = await ProjectDAO.get_files(template_project)
+        project_history = ProjectHistory(
+            action=action,
+            project_id=project.id,
+            user_id=user.id,
+            file_id=file.id if file else None,
+            state_before=state_before,
+            state_after=state_after,
+        )
+        db.add(project_history)
 
-        # 复制文件
-        for template_file in template_files:
-            is_exist = await FileDAO.check_file_exist_in_r2(template_file)
-            if not is_exist:
-                logger.warning(f"File {template_file.filename} does not exist in R2, skipping copy.")
-                continue
-
-            new_file = await FileDAO.copy_file(
-                source_file=template_file,
-                target_project=new_project,
-                target_file_create_update=FileCreateUpdate(
-                    filename=template_file.filename,
-                    filepath=template_file.filepath,
-                ),
-                db=db,
-            )
-            logger.info(f"Copied file {template_file.filename} to {new_file.filename}")
+        if commit:
+            await db.commit()
