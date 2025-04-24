@@ -11,6 +11,14 @@ this is the repository hosting the backend for the COMP3032J Final Project.
 ## 初始
 
 1. 根目录下创建 `.env` 文件，示例文件在 [.env.example](./.env.example)
+   需要注意的是目前这三个环境变量都需要设置成使用 `redis`，因为后台任务是运行在独立进程里
+   的，传递信息需要用到 redis
+   ```
+   HIVEY_B_SAQ_URL=redis://localhost:6379
+   HIVEY_B_AIOCACHE_URL=memory://
+   HIVEY_B_PUB_SUB_BACKEND_URL=memory://
+   ```
+   
 2. 如果`USE_SQLITE`不是`true`你则需要在`MySQL/MariaDB`中创建和 `.env` 中的数据库名称对应的
    数据库。
 3. 创建 python 虚拟环境并激活
