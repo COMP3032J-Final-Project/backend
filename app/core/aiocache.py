@@ -29,3 +29,7 @@ def get_cache_key_crdt(file_id: str | UUID):
 def get_cache_key_crdt_upload_r2_debounce(file_id: str | UUID):
     return f"crdt/debounce_r2_upload:{file_id}"
 
+def get_cache_key_crdt_write_local_file_debounce(file_id: str | UUID):
+    return f"crdt/debounce_write_local_file:{file_id}"
+    
+

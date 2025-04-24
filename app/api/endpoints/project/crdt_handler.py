@@ -8,7 +8,10 @@ from loro import LoroDoc, ExportMode
 from base64 import b64decode
 # from fastapi import BackgroundTasks # only works inside FastAPI's request/response lifecycle
 
-from app.core.aiocache import cache, get_cache_key_crdt, get_cache_key_crdt_upload_r2_debounce
+from app.core.aiocache import (
+    cache, get_cache_key_crdt, get_cache_key_crdt_upload_r2_debounce,
+    get_cache_key_crdt_write_local_file_debounce
+)
 from app.core.background_tasks import background_tasks
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 
@@ -19,15 +22,13 @@ class CrdtHandler:
         should_update_local_files: bool = False,
         should_upload_to_r2: bool = False,
         lorocrdt_text_container_id: str = "codemirror",
-        temp_directory_path: Path = settings.TEMP_PROJECTS_PATH,
-        r2_upload_debounce_ttl: float = 1.0,
+        debounce_ttl: float = 1.0,
     ):
             
         self.lorocrdt_text_container_id = lorocrdt_text_container_id
         self.should_upload_to_r2 = should_upload_to_r2
         self.should_update_local_files = should_update_local_files
-        self.temp_directory_path = temp_directory_path
-        self.r2_upload_debounce_ttl = r2_upload_debounce_ttl
+        self.debounce_ttl = debounce_ttl
         
         # --- State Management for R2 Uploads ---
         # file_id -> last upload time
@@ -93,36 +94,6 @@ class CrdtHandler:
     async def get_doc(self, file_id: str) -> LoroDoc:
         doc = await self._get_doc_from_cache(file_id)
         return doc
-    
-    async def _update_local_file(
-        self,
-        project_id: str,
-        file_id: str,
-        doc: LoroDoc
-    ):
-        try:
-            text_container = doc.get_text(self.lorocrdt_text_container_id)
-            content = text_container.to_string()
-        except BaseException as e:
-            logger.error(
-                f"Could not get text content ('{self.lorocrdt_text_container_id}') from "
-                f"LoroDoc for {project_id}/{file_id}: {e}"
-            )
-            return
-        
-        # FIXME file name instead of `file_id`
-        target_file_path = self.temp_directory_path / project_id / file_id
-        target_dir = target_file_path.parent
-        
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-            # NOTE consider using asyncio.to_thread for blocking I/O if performance critical
-            with open(target_file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        except OSError as e:
-            logger.error(f"OS error writing local file {target_file_path}: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error writing local file {target_file_path}: {e}")
 
     async def receive_update(
         self, project_id: str,
@@ -157,9 +128,19 @@ class CrdtHandler:
             await self._set_doc_to_cache(file_id, doc)
              
             if self.should_update_local_files and doc:
-                asyncio.create_task(
-                    self._update_local_file(project_id, file_id, doc)
-                )
+                debounce_key = get_cache_key_crdt_write_local_file_debounce(file_id)
+                debounce_status = await cache.get(debounce_key)
+                if debounce_status is None:
+                    await background_tasks.enqueue(
+                        "update_local_project_file",
+                        project_id_str=project_id,
+                        file_id_str=file_id
+                    )
+                    await cache.set(
+                        debounce_key,
+                        "debounce",
+                        ttl=self.debounce_ttl
+                    )
                 
             if self.should_upload_to_r2:
                 debounce_key = get_cache_key_crdt_upload_r2_debounce(file_id)
@@ -171,7 +152,7 @@ class CrdtHandler:
                     await cache.set(
                         debounce_key,
                         "debounce",
-                        ttl=self.r2_upload_debounce_ttl
+                        ttl=self.debounce_ttl
                     )
                 
             return doc
@@ -183,5 +164,6 @@ class CrdtHandler:
 
 crdt_handler = CrdtHandler(
     lorocrdt_text_container_id=LOROCRDT_TEXT_CONTAINER_ID,
+    should_update_local_files=True,
     should_upload_to_r2=True
 )
