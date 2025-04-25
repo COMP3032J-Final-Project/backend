@@ -6,7 +6,6 @@ After=network.target
 Type=exec
 User=student
 WorkingDirectory=/var/www/hivey/backend/
-ExecStart=/var/www/hivey/backend/misc/scripts/run-in-venv.sh
 # FIXME temporarily we cannot run with workers > 1
 ExecStart=/var/www/hivey/backend/misc/scripts/run-hivey-command.sh fastapi run --workers 1 ./app
 Restart=always
