@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.core.config import settings
+from app.models.base import Base, BaseDB
 from pydantic import ConfigDict, Field
 
 
