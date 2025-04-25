@@ -273,6 +273,12 @@ class FileDAO:
         -----
         该操作的实现基于数据库内部的重命名，对远程资源没有任何操作！
         该操作有比较复杂的副作用，请务必注意！
+
+        TODO 目前是没有对本地编辑文件进行重命名操作的，之所编译有用，是因为 crdt_handler
+        ，所以本地编译文件原来名字的文件还是会存在
+
+        最好用类似 Django signals 之类的东西来实现
+        https://docs.djangoproject.com/en/5.2/topics/signals/
         """
         file.filename = file_create_update.filename
         file.filepath = file_create_update.filepath
