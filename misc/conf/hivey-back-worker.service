@@ -5,7 +5,6 @@ After=network.target
 [Service]
 Type=exec
 User=student
-Group=student # Optional: Set group if needed
 WorkingDirectory=/var/www/hivey/backend/
 ExecStart=/var/www/hivey/backend/misc/scripts/run-in-venv.sh saq app.tasks.saq_settings --web
 Restart=always
