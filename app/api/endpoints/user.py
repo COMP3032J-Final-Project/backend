@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_user, get_target_user
+from app.api.deps import get_db, get_current_user, get_target_user_by_id, get_target_user_by_name
 from app.core.security import verify_password, get_password_hash
 from app.models.base import APIResponse
 from app.models.user import User, UserVerifyPwd, UserUpdatePwd
@@ -114,12 +114,12 @@ async def update_pwd(
     return APIResponse(code=200, msg="Password updated")
 
 
-@router.get("/{username:str}", response_model=APIResponse[UserInfo])
-async def get_user(
-    target_user: Annotated[User, Depends(get_target_user)],
+@router.get("/{user_id:uuid}", response_model=APIResponse[UserInfo])
+async def get_user_by_id(
+    target_user: Annotated[User, Depends(get_target_user_by_id)],
 ) -> APIResponse[UserInfo]:
     """
-    通过用户名获取用户信息
+    通过用户ID获取用户信息
     """
     user_info = UserInfo.model_validate(target_user)
     return APIResponse[UserInfo](code=200, data=user_info, msg="success")
@@ -134,21 +134,21 @@ async def get_user(
 #     """
 #     上传用户头像
 #     """
-    # avatar_extension = os.path.splitext(avatar.filename)[1] if avatar.filename else ".jpg"
-    # avatar_filename = f"avatars/{current_user.id}{avatar_extension}"
-    # contents = await avatar.read()
-    # await FileDAO.upload_file_to_r2(avatar_filename, contents, avatar.content_type)
+# avatar_extension = os.path.splitext(avatar.filename)[1] if avatar.filename else ".jpg"
+# avatar_filename = f"avatars/{current_user.id}{avatar_extension}"
+# contents = await avatar.read()
+# await FileDAO.upload_file_to_r2(avatar_filename, contents, avatar.content_type)
 
-    # # 保存头像文件名
-    # updated_user = await UserDAO.update_user(current_user, UserUpdate(avatar_filename=avatar_filename), db)
-    # if updated_user is None:
-    #     raise HTTPException(status_code=400, detail="Failed to update user avatar")
-    # return APIResponse(code=200, msg="Avatar uploaded")
+# # 保存头像文件名
+# updated_user = await UserDAO.update_user(current_user, UserUpdate(avatar_filename=avatar_filename), db)
+# if updated_user is None:
+#     raise HTTPException(status_code=400, detail="Failed to update user avatar")
+# return APIResponse(code=200, msg="Avatar uploaded")
 
 
 @router.get("/avatar/{username:str}", response_model=None)
 async def get_avatar(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """

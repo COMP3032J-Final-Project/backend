@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Path
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_project, get_current_user, get_db, get_target_user
+from app.api.deps import get_current_project, get_current_user, get_db, get_target_user_by_name
 from app.api.endpoints.project.websocket_handlers import get_project_channel_name
 from app.models.base import APIResponse
 from app.models.project.project import (
@@ -50,7 +50,7 @@ async def get_members(
 
 @router.get("/{username:str}", response_model=APIResponse[MemberInfo])
 async def get_member(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     project_id: uuid.UUID = Path(...),
@@ -74,7 +74,7 @@ async def get_member(
 
 @router.post("/{username:str}", response_model=APIResponse)
 async def add_member(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
     member_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -138,7 +138,7 @@ async def add_member(
 
 @router.delete("/{username:str}", response_model=APIResponse)
 async def remove_member(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     project_id: uuid.UUID = Path(...),
@@ -192,7 +192,7 @@ async def remove_member(
 
 @router.put("/{username:str}", response_model=APIResponse)
 async def update_member(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
     new_permission: ProjectPermissionData,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -259,7 +259,7 @@ async def update_member(
 
 @router.put("/owner/{username:str}", response_model=APIResponse)
 async def transfer_ownership(
-    target_user: Annotated[User, Depends(get_target_user)],
+    target_user: Annotated[User, Depends(get_target_user_by_name)],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     project_id: uuid.UUID = Path(...),

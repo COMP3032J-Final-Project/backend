@@ -95,9 +95,20 @@ async def get_current_user_ws(websocket: WebSocket, db: Annotated[AsyncSession, 
     except WebSocketDisconnect:
         logger.info("WebSocket connection closed (expected on invalid token)")
         raise
+    
+    
+async def get_target_user_by_id(
+    user_id: Annotated[uuid.UUID, Path(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """通过用户ID获取用户"""
+    user = await UserDAO.get_user_by_id(user_id, db)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 
-async def get_target_user(
+async def get_target_user_by_name(
     username: Annotated[str, Path(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
