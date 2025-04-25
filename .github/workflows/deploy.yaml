@@ -17,7 +17,7 @@ jobs:
       - name: Upload Repository
         uses: burnett01/rsync-deployments@7.0.2
         with:
-          switches: -avzr --delete --exclude .venv
+          switches: -avzr --delete --exclude .venv --exclude .env
           path: ./
           remote_path: /var/www/hivey/backend
           remote_host: ${{ secrets.HOST }}
@@ -30,9 +30,5 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /var/www/hivey/backend && cat > .env << EOF
-              ${{ secrets.ENV_FILE_CONTENT }}
-            EOF
-            sudo /var/www/hivey/backend/misc/scripts/update-systemd-service.sh
+          script: sudo /var/www/hivey/backend/misc/scripts/update-systemd-service.sh
           
