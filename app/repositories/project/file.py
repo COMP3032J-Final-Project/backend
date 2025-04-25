@@ -3,22 +3,21 @@ import logging
 import os
 import uuid
 from io import BytesIO
-from pathlib import PureWindowsPath, Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 import botocore
 import orjson
+from app.core.background_tasks import background_tasks
 from app.core.config import settings
 from app.core.r2client import r2client
+from app.models.base import Base, BaseDB
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
+from app.models.project.websocket import FileAction
+from app.repositories.project.project import ProjectDAO
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from app.core.background_tasks import background_tasks
-
-from app.models.project.websocket import FileAction
-
-from app.repositories.project.project import ProjectDAO
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -51,7 +50,7 @@ class FileDAO:
 
     @staticmethod
     async def create_update_file(
-        file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, expiration=3600
+        file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, expiration=settings.EXPIRATION_TIME
     ) -> tuple[File, str]:
         """
         增/改
@@ -248,14 +247,12 @@ class FileDAO:
             )
             logger.info(f"Copied file {template_file.filename} to {new_file.filename}")
 
-    
     @staticmethod
     def get_temp_file_path(file: File) -> Path:
         """
         各自平台对应的本地暂存文件夹路径
         """
         return settings.TEMP_PROJECTS_PATH / str(file.project_id) / file.filepath / file.filename
-
 
     @staticmethod
     def get_remote_file_path(file_id: str | uuid.UUID) -> str:
@@ -303,7 +300,7 @@ class FileDAO:
         return result.scalars().first()
 
     @staticmethod
-    async def generate_get_obj_link_for_file(file: File, expiration=3600) -> str:
+    async def generate_get_obj_link_for_file(file: File, expiration=settings.EXPIRATION_TIME) -> str:
         fp = FileDAO.get_remote_file_path(file.id)
         response = ""
         try:

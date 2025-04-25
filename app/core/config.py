@@ -62,6 +62,8 @@ class Settings(BaseSettings):
 
     TEMP_PROJECTS_PATH: Path = TEMP_PATH / "projects"
 
+    EXPIRATION_TIME: int = int(os.getenv("HIVEY_B_EXPIRATION_TIME", 12 * 3600))
+
     try:
         os.mkdir(TEMP_PATH)
         logger.info(f"Directory '{TEMP_PATH}' created successfully.")

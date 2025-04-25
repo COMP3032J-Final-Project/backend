@@ -3,19 +3,17 @@ from __future__ import annotations
 import os
 import subprocess
 import uuid
+from pathlib import Path
 from typing import Optional
 
 import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
-from pathlib import Path
-
+from config import settings
 from loguru import logger
 
-def compile_latex_with_latexmk(
-    path_to_tex_file: str | Path,
-    r2_remote_path: str
-) -> Optional[str]:
+
+def compile_latex_with_latexmk(path_to_tex_file: str | Path, r2_remote_path: str) -> Optional[str]:
     """
     Compiles a LaTeX file using latexmk, uploads the resulting PDF to R2,
     and returns a presigned URL.
@@ -41,11 +39,11 @@ def compile_latex_with_latexmk(
     latexmk_command = [
         "latexmk",
         "-pdf",
-        "-synctex=1",        # Enable SyncTeX
-        "-interaction=nonstopmode", # Don't stop on errors within LaTeX run
+        "-synctex=1",  # Enable SyncTeX
+        "-interaction=nonstopmode",  # Don't stop on errors within LaTeX run
         "-file-line-error",  # Produce file:line:error style messages
-        "-halt-on-error",    # Exit latexmk immediately if LaTeX errors occur
-        tex_file_name
+        "-halt-on-error",  # Exit latexmk immediately if LaTeX errors occur
+        tex_file_name,
     ]
 
     logger.info(f"Running latexmk for {tex_file_name} in {cwd}")
@@ -56,9 +54,9 @@ def compile_latex_with_latexmk(
             latexmk_command,
             cwd=cwd,
             capture_output=True,
-            text=True,       # Decode stdout/stderr as text
-            check=False,     # Manually check return code instead of raising CalledProcessError
-            timeout=120      # Add a timeout (e.g., 2 minutes) to prevent hangs
+            text=True,  # Decode stdout/stderr as text
+            check=False,  # Manually check return code instead of raising CalledProcessError
+            timeout=120,  # Add a timeout (e.g., 2 minutes) to prevent hangs
         )
 
         # --- Check compilation result ---
@@ -86,7 +84,7 @@ def compile_latex_with_latexmk(
         # --- Check if PDF was actually created ---
         if not os.path.exists(pdf_path):
             logger.error(f"latexmk completed successfully but PDF not found at: {pdf_path}")
-            logger.error(f"STDOUT:\n{process.stdout}") # Log output for debugging
+            logger.error(f"STDOUT:\n{process.stdout}")  # Log output for debugging
             logger.error(f"STDERR:\n{process.stderr}")
             return None
 
@@ -111,17 +109,17 @@ def compile_latex_with_latexmk(
             presigned_url = r2client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": settings.R2_BUCKET, "Key": remote_key},
-                ExpiresIn=3600
+                ExpiresIn=settings.EXPIRATION_TIME,
             )
             logger.info(f"Generated presigned URL for {remote_key}")
             return presigned_url
 
         except botocore.exceptions.ClientError as error:
             logger.exception(f"R2 client error during upload or URL generation for {remote_key}: {error}")
-            return None # Indicate failure
-        except Exception as e: # Catch other potential file IO errors
-             logger.exception(f"Error during file handling or R2 upload for {pdf_path}: {e}")
-             return None
+            return None  # Indicate failure
+        except Exception as e:  # Catch other potential file IO errors
+            logger.exception(f"Error during file handling or R2 upload for {pdf_path}: {e}")
+            return None
 
     except FileNotFoundError:
         logger.critical("Error: 'latexmk' command not found. Is TeX Live or MiKTeX installed and in the system PATH?")
