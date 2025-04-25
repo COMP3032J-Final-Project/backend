@@ -15,6 +15,7 @@ from app.models.base import Base, BaseDB
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
 from app.models.project.websocket import FileAction
+from app.models.user import User
 from app.repositories.project.project import ProjectDAO
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -50,7 +51,7 @@ class FileDAO:
 
     @staticmethod
     async def create_update_file(
-        file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, expiration=settings.EXPIRATION_TIME
+        file_create_update: FileCreateUpdate, project: Project, db: AsyncSession, user: User, expiration=settings.EXPIRATION_TIME
     ) -> tuple[File, str]:
         """
         增/改
@@ -129,7 +130,7 @@ class FileDAO:
 
     @staticmethod
     async def move_file(
-        file_action: FileAction, file: File, file_create_update: FileCreateUpdate, db: AsyncSession
+        file_action: FileAction, file: File, file_create_update: FileCreateUpdate, db: AsyncSession, user: User
     ) -> File:
         """
         移动/重命名现有文件（参考Linux mv）
@@ -156,7 +157,6 @@ class FileDAO:
             file.filepath = new_filepath
             db.add(file)
 
-            owner = await ProjectDAO.get_project_owner(file.project, db)
             state_after = {
                 "filename": new_filename,
                 "filepath": new_filepath,
@@ -164,7 +164,7 @@ class FileDAO:
             await ProjectDAO.add_project_history(
                 action=file_action,
                 project=file.project,
-                user=owner,
+                user=user,
                 db=db,
                 file=file,
                 state_before=orjson.dumps(state_before),

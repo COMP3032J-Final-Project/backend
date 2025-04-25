@@ -233,7 +233,7 @@ async def create_update_file(
         raise HTTPException(status_code=403, detail="No permission to upload files")
 
     file, url = await FileDAO.create_update_file(
-        file_create_update=file_create_update, project=current_project, db=db
+        file_create_update=file_create_update, project=current_project, db=db, user=current_user
     )
     response_data = FileUploadResponse(file_id=file.id, url=url)
     return APIResponse(code=200, data=response_data, msg="success")
@@ -317,7 +317,7 @@ async def mv(
 
     try:
         file_action = FileAction.MOVED if file_create_update.filepath else FileAction.RENAMED
-        file = await FileDAO.move_file(file_action=file_action, file=current_file, file_create_update=file_create_update, db=db)
+        file = await FileDAO.move_file(file_action=file_action, file=current_file, file_create_update=file_create_update, db=db, user=current_user)
     except Exception as error:
         return APIResponse(code=500, detail=f"{error}")
 
