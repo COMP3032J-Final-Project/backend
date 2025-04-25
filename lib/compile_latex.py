@@ -9,7 +9,6 @@ from typing import Optional
 import botocore
 from app.core.config import settings
 from app.core.r2client import r2client
-from config import settings
 from loguru import logger
 
 
