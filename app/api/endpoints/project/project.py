@@ -19,7 +19,7 @@ from app.models.project.project import (
     ProjectTypeData,
     ProjectsDelete,
     ProjectType,
-    ProjectUpdate,
+    ProjectUpdate, MemberInfo,
 )
 from app.repositories.project.file import FileDAO
 from app.models.user import User
@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project.websocket import Message, EventScope, ProjectAction
+from app.repositories.user import UserDAO
 from .websocket_handlers import project_general_manager, get_project_channel_name
 from loro import LoroDoc
 from lib.utils import is_likely_binary
@@ -423,14 +424,22 @@ async def get_project_history(
         state_before = orjson.loads(h.state_before) if h.state_before else None
         state_after = orjson.loads(h.state_after) if h.state_after else None
 
+        user = await UserDAO.get_user_by_id(h.user_id, db)
+        user_info = MemberInfo(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            permission=await ProjectDAO.get_project_permission(current_project, user, db),
+        ) if user else None
+
         history_info = ProjectHistoryInfo(
             action=h.action,
             project_id=h.project_id,
-            user_id=h.user_id,
             file_id=h.file_id,
             state_before=state_before,
             state_after=state_after,
             timestamp=h.created_at,
+            user=user_info,
         )
         histories_info.append(history_info)
 

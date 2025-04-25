@@ -235,8 +235,8 @@ class ProjectPermissionData(Base):
 class ProjectHistoryInfo(Base):
     action: ProjectAction | FileAction = Field(...)
     project_id: uuid.UUID = Field(...)
-    user_id: uuid.UUID = Field(...)
     file_id: uuid.UUID | None = Field(default=None)
     state_before: dict | None = Field(default=None)
     state_after: dict | None = Field(default=None)
     timestamp: datetime = Field(default_factory=datetime.now)
+    user: MemberInfo = Field(...)
