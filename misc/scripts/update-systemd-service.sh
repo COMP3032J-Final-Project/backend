@@ -12,4 +12,7 @@ cp -f /var/www/hivey/backend/misc/conf/hivey-back-api.service /usr/lib/systemd/s
 cp -f /var/www/hivey/backend/misc/conf/hivey-back-worker.service /usr/lib/systemd/system/hivey-back-worker.service
 
 systemctl daemon-reload
-systemctl enable --now hivey-back.target
+# systemctl enable --now hivey-back.target
+systemctl restart hivey-back-api
+systemctl restart hivey-back-worker
+
