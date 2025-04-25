@@ -1,0 +1,18 @@
+[Unit]
+Description=Hivey Background Worker (SAQ)
+After=network.target
+
+[Service]
+Type=exec
+User=student
+Group=student # Optional: Set group if needed
+WorkingDirectory=/var/www/hivey/backend/
+ExecStart=/var/www/hivey/backend/misc/scripts/run-hivey-command.sh saq app.tasks.saq_settings --web
+Restart=always
+RestartSec=5
+# For Python apps: ensure logs aren't buffered excessively
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+# hivey.target will manage installation/startup
+# WantedBy=multi-user.target

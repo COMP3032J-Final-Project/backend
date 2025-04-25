@@ -1,0 +1,20 @@
+[Unit]
+Description=Hivey API Service (FastAPI)
+After=network.target
+
+[Service]
+Type=exec
+User=student
+WorkingDirectory=/var/www/hivey/backend/
+ExecStart=/var/www/hivey/backend/misc/scripts/run-in-venv.sh
+# FIXME temporarily we cannot run with workers > 1
+ExecStart=/var/www/hivey/backend/misc/scripts/run-hivey-command.sh fastapi run --workers 1 ./app
+Restart=always
+RestartSec=5
+# For Python apps: ensure logs aren't buffered excessively
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+# hivey.target will manage installation/startup
+# WantedBy=multi-user.target
+

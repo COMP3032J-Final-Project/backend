@@ -1,0 +1,12 @@
+[Unit]
+Description=Hivey Application Group (API and Worker)
+# 'Wants': target will still start even if one of these fails.
+# 'Requires': if the target should fail if any dependency fails.
+Wants=hivey-api.service hivey-worker.service
+# Ensure this target starts after the services it manages are up (logical ordering)
+After=hivey-back-api.service hivey-back-worker.service
+
+[Install]
+# Make hivey.target part of the default multi-user system state.
+# Starting multi-user.target will indirectly start hivey.target, which starts the services.
+WantedBy=multi-user.target
