@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 
-systemctl disable --now hivey-back-end 2>/dev/null
+systemctl disable --now hivey-back.target 2>/dev/null
+systemctl disable --now hivey-back-api 2>/dev/null
+systemctl disable --now hivey-back-worker 2>/dev/null
+
 rm -f /usr/lib/systemd/system/hivey-back.target
 rm -f /usr/lib/systemd/system/hivey-back-workder.service
 rm -f /usr/lib/systemd/system/hivey-back-api.service
