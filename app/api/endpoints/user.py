@@ -1,6 +1,4 @@
 # User 相关的 API 路由
-import mimetypes
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
