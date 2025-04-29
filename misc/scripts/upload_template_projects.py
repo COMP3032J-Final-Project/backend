@@ -53,7 +53,7 @@ async def create_template_projects(db: AsyncSession) -> None:
             假设：服务不经常重启
         """
         for file in await ProjectDAO.get_files(project=template_project):
-            await FileDAO.delete_file(file=file, db=db)
+            await FileDAO.delete_file(file=file, user=admin_user, db=db)
 
         # this rests both local and remote to a "clean-slate"
         filepaths = glob.glob(os.path.normpath(os.path.join(folder.path, "**.**")), recursive=True)

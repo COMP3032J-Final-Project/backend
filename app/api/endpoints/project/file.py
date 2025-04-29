@@ -132,7 +132,7 @@ async def delete_file(
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
     try:
-        if await FileDAO.delete_file(file=current_file, db=db):
+        if await FileDAO.delete_file(file=current_file, user=current_user, db=db):
             # 广播
             channel = get_project_channel_name(current_project.id)
             await project_general_manager.publish(
@@ -193,7 +193,7 @@ async def delete_files(
         raise HTTPException(status_code=400, detail=" | ".join(error_messages))
 
     for file in files:
-        await FileDAO.delete_file(file, db)
+        await FileDAO.delete_file(file, current_user, db)
 
     try:
         # 单次广播

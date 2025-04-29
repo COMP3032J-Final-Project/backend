@@ -94,7 +94,7 @@ class FileDAO:
         return file, response
 
     @staticmethod
-    async def delete_file(file: File, db: AsyncSession) -> bool:
+    async def delete_file(file: File, user: User, db: AsyncSession) -> bool:
         """
         删除
         """
@@ -106,7 +106,6 @@ class FileDAO:
             raise
 
         # 添加历史记录
-        owner = await ProjectDAO.get_project_owner(file.project, db)
         state_before = {
             "filename": file.filename,
             "filepath": file.filepath,
@@ -114,7 +113,7 @@ class FileDAO:
         await ProjectDAO.add_project_history(
             action=FileAction.DELETED,
             project=file.project,
-            user=owner,
+            user=user,
             db=db,
             file=file,
             state_before=orjson.dumps(state_before),
