@@ -127,7 +127,7 @@ async def delete_file(
         raise HTTPException(status_code=403, detail="No permission to delete this file")
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db, current_user)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -258,7 +258,7 @@ async def check_file_exist(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db, current_user)
     if is_exists:
         cache_key_new_file_lock = get_cache_key_new_file_lock(file_id)
         await cache.set(cache_key_new_file_lock, 1)
@@ -311,7 +311,7 @@ async def mv(
         raise HTTPException(status_code=403, detail="No permission to access this file")
 
     # 检查文件是否存在于 R2
-    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db)
+    is_exists = await FileDAO.check_file_exist_in_r2(current_file, db, current_user)
     if not is_exists:
         raise HTTPException(status_code=404, detail="File does not exist remotely (r2).")
 
@@ -367,7 +367,7 @@ async def cp(
         file = await FileDAO.copy_file(
             source_file=current_file,
             target_file_create_update=file_create_update,
-            target_project=current_project,
+            user=current_user,
             db=db,
         )
     except Exception as error:

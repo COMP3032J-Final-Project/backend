@@ -1,5 +1,5 @@
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 import orjson
 
 from loguru import logger

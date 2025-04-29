@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import uuid
@@ -8,10 +7,8 @@ from typing import Optional
 
 import botocore
 import orjson
-from app.core.background_tasks import background_tasks
 from app.core.config import settings
 from app.core.r2client import r2client
-from app.models.base import Base, BaseDB
 from app.models.project.file import File, FileCreateUpdate
 from app.models.project.project import Project
 from app.models.project.websocket import FileAction
@@ -184,6 +181,7 @@ class FileDAO:
     async def copy_file(
         source_file: File,
         target_file_create_update: FileCreateUpdate,
+        user: User,
         db: AsyncSession,
         target_project: Optional[Project] = None,
     ) -> File:
@@ -211,7 +209,7 @@ class FileDAO:
                 Bucket=settings.R2_BUCKET,
                 Key=FileDAO.get_remote_file_path(target_file.id),
             )
-            await FileDAO.check_file_exist_in_r2(target_file, db)
+            await FileDAO.check_file_exist_in_r2(target_file, db, user)
         except botocore.exceptions.ClientError as error:
             logger.error(error)
             raise
@@ -231,7 +229,8 @@ class FileDAO:
 
         # 复制文件
         for template_file in template_files:
-            is_exist = await FileDAO.check_file_exist_in_r2(template_file, db)
+            owner = await ProjectDAO.get_project_owner(new_project, db)
+            is_exist = await FileDAO.check_file_exist_in_r2(template_file, db, owner)
             if not is_exist:
                 logger.warning(f"File {template_file.filename} does not exist in R2, skipping copy.")
                 continue
@@ -314,7 +313,7 @@ class FileDAO:
         return response
 
     @staticmethod
-    async def check_file_exist_in_r2(file: File, db: AsyncSession) -> bool:
+    async def check_file_exist_in_r2(file: File, db: AsyncSession, user: User | None = None) -> bool:
         """
         检查文件对应的远程资源是否在R2中存在
         """
@@ -326,9 +325,7 @@ class FileDAO:
             has_history = await ProjectDAO.has_file_history(file, db)
             if not has_history:
                 logger.info(f"File {file.id} has no history, adding history")
-
                 project = await ProjectDAO.get_project_by_id(file.project_id, db)
-                owner = await ProjectDAO.get_project_owner(project, db)
                 state_after = {
                     "filename": file.filename,
                     "filepath": file.filepath,
@@ -336,7 +333,7 @@ class FileDAO:
                 await ProjectDAO.add_project_history(
                     action=FileAction.ADDED,
                     project=project,
-                    user=owner,
+                    user=user,
                     db=db,
                     file=file,
                     state_after=orjson.dumps(state_after),

@@ -25,6 +25,7 @@ class FilesDelete(Base):
     file_ids: list[uuid.UUID] = Field(...)
 
 
+# TODO 添加创建文件的user_id
 class File(BaseDB, table=True):
     """
     文件表单
