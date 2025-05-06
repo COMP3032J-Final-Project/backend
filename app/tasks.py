@@ -20,6 +20,7 @@ from app.core.aiocache import (
 )
 from app.core.constants import LOROCRDT_TEXT_CONTAINER_ID
 from lib.compile_latex import compile_latex_with_latexmk
+from lib.compile_typst import compile_typst
 from app.models.project.websocket import Message, EventScope, ProjectAction
 import redis.asyncio as aioredis
 import os
@@ -222,13 +223,28 @@ async def update_cache_and_local_files_from_r2(ctx, file_id_str: str):
 
 
 async def compile_project_pdf(ctx, project_id_str: str):
+    # main.typ > main.tex
     project_path = settings.TEMP_PROJECTS_PATH / project_id_str
     main_latex_file_path = project_path / "main.tex"
-    if os.path.exists(main_latex_file_path):
-        url = compile_latex_with_latexmk(
-            main_latex_file_path,
-            f"compiled/{project_id_str}"
-        )
+    main_typst_file_path = project_path / "main.typ"
+    has_latex_main_file = main_latex_file_path.exists()
+    has_typst_main_file = main_typst_file_path.exists()
+    if has_latex_main_file or has_typst_main_file:
+        # TODO separate upload file to R2 function from compiling PDF function
+        if has_typst_main_file:
+            url = compile_typst(
+                main_typst_file_path,
+                f"compiled/{project_id_str}"
+            )
+        elif has_latex_main_file:
+            url = compile_latex_with_latexmk(
+                main_latex_file_path,
+                f"compiled/{project_id_str}"
+            )
+        else: # impossible
+            logger.error("Program Logic Error!")
+            return
+
         channel_name = get_project_channel_name(project_id_str)
         await publish_to_channel(
             channel_name,
@@ -238,6 +254,7 @@ async def compile_project_pdf(ctx, project_id_str: str):
                 payload=url
             ).model_dump_json()
         )
+        
 
 async def shutdown(ctx):
     await engine.dispose()
