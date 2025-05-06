@@ -89,7 +89,7 @@ async def create_template_projects(db: AsyncSession) -> None:
             r2client.upload_fileobj(BytesIO(upload_content), Bucket=settings.R2_BUCKET, Key=frp)
             
             if not await ProjectDAO.has_file_history(file=file, db=db):
-                await FileDAO.check_file_exist_in_r2(file=file, db=db)
+                await FileDAO.check_file_exist_in_r2(file=file, db=db, user=admin_user)
 
 
         logger.info(f"Finished uploading template {folder}")
