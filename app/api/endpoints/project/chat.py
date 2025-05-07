@@ -69,7 +69,7 @@ async def get_chat_history(
             content=message.content,
             timestamp=message.created_at,
             user={
-                "id": str(message.sender_id),
+                "user_id": str(message.sender_id),
                 "username": user.username,
                 "email": user.email,
             },

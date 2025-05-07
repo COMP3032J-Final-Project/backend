@@ -189,3 +189,6 @@ test.py
 *.tex
 *bbl
 *toc
+.history
+.idea
+.vscode
